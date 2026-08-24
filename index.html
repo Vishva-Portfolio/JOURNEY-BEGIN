@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Journey Begin — Eternity of Crystal</title>
+<meta name="description" content="Journey Begin — a manga discovery platform. Every story begins with a journey.">
+
+<!-- Fonts: Cinzel for fantasy display, Jost for body, JetBrains Mono for labels/data -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Jost:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ FRACTURE OVERLAY (decorative crystal-crack lines, fixed) ============ -->
+<svg class="fracture-overlay" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"></svg>
+
+<!-- ============ CUSTOM CURSOR / SCROLL PROGRESS ============ -->
+<div class="scroll-progress" id="scrollProgress"></div>
+
+<!-- ============================================================
+     NAVIGATION
+============================================================= -->
+<header class="site-nav" id="siteNav">
+  <div class="nav-inner">
+    <a href="#home" class="logo" data-nav-link>
+      <span class="logo-mark">◈</span>
+      <span class="logo-text">JOURNEY<em>BEGIN</em></span>
+    </a>
+
+    <nav class="nav-links" id="navLinks">
+      <a href="#home" class="nav-link active" data-nav-link>Home</a>
+      <a href="#manga" class="nav-link" data-nav-link>Manga</a>
+      <a href="#discover" class="nav-link" data-nav-link>Discover</a>
+      <a href="#characters" class="nav-link" data-nav-link>Characters</a>
+      <a href="#world" class="nav-link" data-nav-link>Worlds</a>
+      <a href="#news" class="nav-link" data-nav-link>News</a>
+    </nav>
+
+    <div class="nav-actions">
+      <button class="icon-btn" id="searchToggle" aria-label="Search" title="Search">
+        <svg viewBox="0 0 24 24"><path d="M10.5 3a7.5 7.5 0 015.94 12.06l4.75 4.75-1.4 1.4-4.75-4.75A7.5 7.5 0 1110.5 3zm0 2a5.5 5.5 0 100 11 5.5 5.5 0 000-11z"/></svg>
+      </button>
+      <button class="icon-btn" id="bookmarkToggle" aria-label="Bookmarks" title="Bookmarks">
+        <svg viewBox="0 0 24 24"><path d="M6 2h12a1 1 0 011 1v18l-7-4.2L5 21V3a1 1 0 011-1z"/></svg>
+        <span class="badge" id="bookmarkCount">0</span>
+      </button>
+      <button class="hamburger" id="hamburgerBtn" aria-label="Menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ============================================================
+     SEARCH OVERLAY
+============================================================= -->
+<div class="search-overlay" id="searchOverlay">
+  <div class="search-panel">
+    <div class="search-input-row">
+      <svg viewBox="0 0 24 24" class="search-icon"><path d="M10.5 3a7.5 7.5 0 015.94 12.06l4.75 4.75-1.4 1.4-4.75-4.75A7.5 7.5 0 1110.5 3zm0 2a5.5 5.5 0 100 11 5.5 5.5 0 000-11z"/></svg>
+      <input type="text" id="searchInput" placeholder="Search manga, characters, chapters, locations, lore, news..." autocomplete="off">
+      <button class="icon-btn" id="searchClose" aria-label="Close search">
+        <svg viewBox="0 0 24 24"><path d="M6.4 4.98L12 10.59l5.6-5.6 1.4 1.4-5.6 5.6 5.6 5.6-1.4 1.4-5.6-5.6-5.6 5.6-1.4-1.4 5.6-5.6-5.6-5.6z"/></svg>
+      </button>
+    </div>
+    <div class="search-results" id="searchResults">
+      <p class="search-hint">Try “Felix”, “Chapter 2”, “Kingdom”, or “Crystal”.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     BOOKMARK PANEL
+============================================================= -->
+<div class="bookmark-overlay" id="bookmarkOverlay">
+  <div class="bookmark-panel">
+    <div class="bookmark-head">
+      <h3>Your Bookmarks</h3>
+      <button class="icon-btn" id="bookmarkClose" aria-label="Close bookmarks">
+        <svg viewBox="0 0 24 24"><path d="M6.4 4.98L12 10.59l5.6-5.6 1.4 1.4-5.6 5.6 5.6 5.6-1.4 1.4-5.6-5.6-5.6 5.6-1.4-1.4 5.6-5.6-5.6-5.6z"/></svg>
+      </button>
+    </div>
+    <div class="bookmark-list" id="bookmarkList">
+      <p class="empty-note">No bookmarks yet. Tap the crystal icon on any manga or chapter to save it here.</p>
+    </div>
+  </div>
+</div>
+
+<main id="mainContent">
+
+  <!-- ============================================================
+       HERO
+  ============================================================= -->
+  <section class="hero" id="home">
+    <div class="hero-bg" id="heroBg"></div>
+    <div class="hero-overlay"></div>
+    <div class="hero-shards" aria-hidden="true"></div>
+
+    <div class="hero-content">
+      <p class="eyebrow reveal">FEATURED MANGA</p>
+      <h1 class="hero-title reveal">Eternity<span class="hero-title-of">of</span>Crystal</h1>
+      <p class="hero-tagline reveal">“An extraordinary journey begins in a world of crystals, kingdoms, mysteries and destiny.”</p>
+      <div class="hero-actions reveal">
+        <a href="#reader" class="btn btn-primary" data-open-reader data-manga="eternity-of-crystal" data-chapter="1">
+          <span>Read Manga</span>
+        </a>
+        <a href="#world" class="btn btn-ghost" data-nav-link>
+          <span>Explore World</span>
+        </a>
+      </div>
+    </div>
+
+    <div class="scroll-cue reveal">
+      <span>Scroll</span>
+      <div class="scroll-line"></div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       MANGA GRID — "Discover Manga"
+  ============================================================= -->
+  <section class="section" id="manga">
+    <div class="section-inner">
+      <header class="section-head reveal-up">
+        <p class="section-eyebrow">The Catalog</p>
+        <h2 class="section-title">Discover Manga</h2>
+        <p class="section-desc">Every world begins with a single page. Explore the stories currently unfolding on Journey Begin.</p>
+      </header>
+
+      <div class="manga-grid" id="mangaGrid"><!-- injected by script.js --></div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       LATEST CHAPTERS
+  ============================================================= -->
+  <section class="section section-alt" id="discover">
+    <div class="section-inner">
+      <header class="section-head reveal-up">
+        <p class="section-eyebrow">Fresh Ink</p>
+        <h2 class="section-title">Latest Chapters</h2>
+        <p class="section-desc">Newly released pages from across the Journey Begin catalog.</p>
+      </header>
+
+      <div class="chapter-list" id="chapterList"><!-- injected by script.js --></div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       WORLD / MAP
+  ============================================================= -->
+  <section class="section" id="world">
+    <div class="section-inner">
+      <header class="section-head reveal-up">
+        <p class="section-eyebrow">Cartography</p>
+        <h2 class="section-title">Explore the World</h2>
+        <p class="section-desc">The realm of Eternity of Crystal — click a marker to uncover its secrets.</p>
+      </header>
+
+      <div class="map-wrap reveal-up">
+        <div class="map-stage" id="mapStage">
+          <div class="map-art"><!-- generated fantasy-map background via CSS --></div>
+          <!-- markers injected by script.js -->
+        </div>
+
+        <aside class="map-panel" id="mapPanel">
+          <p class="map-panel-empty">Select a location marker on the map to learn about its role in the story.</p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       CHARACTERS
+  ============================================================= -->
+  <section class="section section-alt" id="characters">
+    <div class="section-inner">
+      <header class="section-head reveal-up">
+        <p class="section-eyebrow">The Bearers</p>
+        <h2 class="section-title">Meet the Characters</h2>
+        <p class="section-desc">Five souls, one destiny. Tap a card to reveal their story.</p>
+      </header>
+
+      <div class="character-grid" id="characterGrid"><!-- injected by script.js --></div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       LORE
+  ============================================================= -->
+  <section class="section" id="lore">
+    <div class="section-inner">
+      <header class="section-head reveal-up">
+        <p class="section-eyebrow">Hidden Knowledge</p>
+        <h2 class="section-title">Lore &amp; Mysteries</h2>
+        <p class="section-desc">Fragments of truth gathered from the world of crystals.</p>
+      </header>
+
+      <div class="lore-accordion" id="loreAccordion"><!-- injected by script.js --></div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       GALLERY
+  ============================================================= -->
+  <section class="section section-alt" id="gallery">
+    <div class="section-inner">
+      <header class="section-head reveal-up">
+        <p class="section-eyebrow">Visual Archive</p>
+        <h2 class="section-title">Gallery</h2>
+        <p class="section-desc">Manga pages, character art, concept sketches and maps.</p>
+      </header>
+
+      <div class="gallery-tabs" id="galleryTabs">
+        <button class="gallery-tab active" data-filter="all">All</button>
+        <button class="gallery-tab" data-filter="pages">Manga Pages</button>
+        <button class="gallery-tab" data-filter="characters">Character Art</button>
+        <button class="gallery-tab" data-filter="concept">Concept Art</button>
+        <button class="gallery-tab" data-filter="maps">Maps</button>
+      </div>
+
+      <div class="gallery-grid" id="galleryGrid"><!-- injected by script.js --></div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       NEWS
+  ============================================================= -->
+  <section class="section" id="news">
+    <div class="section-inner">
+      <header class="section-head reveal-up">
+        <p class="section-eyebrow">The Herald</p>
+        <h2 class="section-title">Latest Updates</h2>
+        <p class="section-desc">Announcements from the Journey Begin studio.</p>
+      </header>
+
+      <div class="news-grid" id="newsGrid"><!-- injected by script.js --></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============================================================
+     FOOTER
+============================================================= -->
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <span class="logo-mark">◈</span>
+      <span class="logo-text">JOURNEY<em>BEGIN</em></span>
+      <p class="footer-tagline">“Every story begins with a journey.”</p>
+    </div>
+
+    <nav class="footer-links">
+      <a href="#home" data-nav-link>Home</a>
+      <a href="#manga" data-nav-link>Manga</a>
+      <a href="#discover" data-nav-link>Discover</a>
+      <a href="#characters" data-nav-link>Characters</a>
+      <a href="#world" data-nav-link>Worlds</a>
+      <a href="#news" data-nav-link>News</a>
+    </nav>
+
+    <div class="footer-copy">
+      <p>© 2026 Journey Begin. All Rights Reserved.</p>
+      <p>© 2026 Vishva &amp; Mathavan. All Rights Reserved.</p>
+    </div>
+  </div>
+</footer>
+
+<!-- ============================================================
+     MANGA READER (overlay, full screen)
+============================================================= -->
+<div class="reader" id="reader" aria-hidden="true">
+  <div class="reader-topbar">
+    <button class="reader-btn" id="readerClose" title="Close reader">
+      <svg viewBox="0 0 24 24"><path d="M6.4 4.98L12 10.59l5.6-5.6 1.4 1.4-5.6 5.6 5.6 5.6-1.4 1.4-5.6-5.6-5.6 5.6-1.4-1.4 5.6-5.6-5.6-5.6z"/></svg>
+    </button>
+    <div class="reader-title">
+      <span id="readerMangaTitle">Eternity of Crystal</span>
+      <span class="reader-chapter" id="readerChapterTitle">Chapter 1 — Tale of Crystals</span>
+    </div>
+    <div class="reader-controls">
+      <button class="reader-btn" id="zoomOut" title="Zoom out">−</button>
+      <span class="reader-zoom-level" id="zoomLevel">100%</span>
+      <button class="reader-btn" id="zoomIn" title="Zoom in">+</button>
+      <button class="reader-btn" id="fullscreenBtn" title="Fullscreen">
+        <svg viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm16 0h-2v4h-4v2h6v-6z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="reader-pages" id="readerPages"><!-- pages injected by script.js --></div>
+
+  <div class="reader-bottombar">
+    <button class="reader-nav-btn" id="prevChapter">← Previous Chapter</button>
+    <span class="reader-progress" id="readerProgress">Page 1</span>
+    <button class="reader-nav-btn" id="nextChapter">Next Chapter →</button>
+  </div>
+</div>
+
+<!-- ============================================================
+     LIGHTBOX (gallery fullscreen viewer)
+============================================================= -->
+<div class="lightbox" id="lightbox" aria-hidden="true">
+  <button class="lightbox-close" id="lightboxClose" aria-label="Close">&times;</button>
+  <button class="lightbox-nav lightbox-prev" id="lightboxPrev" aria-label="Previous">&#8249;</button>
+  <img src="" alt="" id="lightboxImg">
+  <button class="lightbox-nav lightbox-next" id="lightboxNext" aria-label="Next">&#8250;</button>
+  <p class="lightbox-caption" id="lightboxCaption"></p>
+</div>
+
+<!-- ============================================================
+     CHARACTER MODAL
+============================================================= -->
+<div class="modal-overlay" id="charModalOverlay">
+  <div class="modal char-modal" id="charModal">
+    <button class="icon-btn modal-close" id="charModalClose" aria-label="Close">
+      <svg viewBox="0 0 24 24"><path d="M6.4 4.98L12 10.59l5.6-5.6 1.4 1.4-5.6 5.6 5.6 5.6-1.4 1.4-5.6-5.6-5.6 5.6-1.4-1.4 5.6-5.6-5.6-5.6z"/></svg>
+    </button>
+    <div id="charModalBody"><!-- injected --></div>
+  </div>
+</div>
+
+<!-- Toast for bookmark confirmations -->
+<div class="toast" id="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
