@@ -813,9 +813,35 @@
   }
 
   /* =====================================================================
-     15. INIT
+     15. REMOTE DATA (Firestore, fed by data-loader.js / edited in /admin)
+     Falls back to the DATA object defined at the top of this file if
+     Firestore has no content yet or can't be reached.
   ===================================================================== */
-  document.addEventListener('DOMContentLoaded', () => {
+  function waitForRemoteData(timeoutMs = 4000) {
+    return new Promise((resolve) => {
+      if (window.__DATA_READY__) return resolve(window.__REMOTE_DATA__);
+      const timer = setTimeout(() => resolve(window.__REMOTE_DATA__ || null), timeoutMs);
+      window.addEventListener('jb:data-ready', () => {
+        clearTimeout(timer);
+        resolve(window.__REMOTE_DATA__);
+      }, { once: true });
+    });
+  }
+
+  function mergeRemoteData(remote) {
+    if (!remote) return;
+    ['manga', 'chapters', 'characters', 'locations', 'lore', 'gallery', 'news'].forEach((key) => {
+      if (Array.isArray(remote[key]) && remote[key].length) DATA[key] = remote[key];
+    });
+  }
+
+  /* =====================================================================
+     16. INIT
+  ===================================================================== */
+  document.addEventListener('DOMContentLoaded', async () => {
+    const remote = await waitForRemoteData();
+    mergeRemoteData(remote);
+
     renderMangaGrid();
     renderChapterList();
     renderMap();

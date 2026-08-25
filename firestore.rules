@@ -1,0 +1,16 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // manga, chapters, characters, locations, lore, gallery, news
+    match /{collection}/{docId} {
+      // Anyone can read content — the public site needs this.
+      allow read: if true;
+
+      // Only a signed-in user (i.e. someone who logged into /admin with
+      // credentials you created in the Firebase Console) can write.
+      allow write: if request.auth != null;
+    }
+  }
+}

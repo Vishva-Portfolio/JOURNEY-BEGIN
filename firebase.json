@@ -1,0 +1,19 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "README.txt"
+    ],
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "rewrites": [
+      { "source": "/admin", "destination": "/admin/index.html" }
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}
