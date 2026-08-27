@@ -98,6 +98,8 @@ ul{ list-style:none; }
 /* ---------------------------------------------------------------------
    3. UTILITIES
 --------------------------------------------------------------------- */
+.hidden{ display:none !important; }
+
 .facet{
   clip-path: polygon(
     var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)),
@@ -502,6 +504,45 @@ ul{ list-style:none; }
 .bookmark-row .brremove:hover{ color: var(--ice); }
 
 /* ---------------------------------------------------------------------
+   16b. ACCOUNT PANEL (reader sign in / register / profile)
+--------------------------------------------------------------------- */
+.account-tabs{ display:flex; gap: var(--sp-2); margin-bottom: var(--sp-4); border-bottom: 1px solid var(--hairline); }
+.account-tab{
+  font-family: var(--font-mono); font-size:.72rem; letter-spacing:.06em; text-transform:uppercase;
+  color: var(--text-low); padding: .7em 0; border-bottom: 2px solid transparent; margin-right: var(--sp-4);
+}
+.account-tab.active{ color: var(--ice); border-bottom-color: var(--ice-dim); }
+.account-form .field{ margin-bottom: var(--sp-3); }
+.account-form label{ display:block; font-size:.78rem; color: var(--text-mid); margin-bottom:.3rem; }
+.account-form input{
+  width:100%; background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--text-hi);
+  border-radius:6px; padding:.6rem .7rem; font-family: var(--font-body); outline:none;
+}
+.account-form input:focus{ border-color: var(--ice-dim); }
+.account-hint{ font-size:.7rem; color: var(--text-low); margin-top:.3rem; }
+.acct-btn-primary, .acct-btn-danger{
+  width:100%; padding:.7rem 1rem; border-radius:8px; font-size:.9rem; letter-spacing:.02em;
+  border:1px solid var(--ice-dim); margin-top:.3rem;
+}
+.acct-btn-primary{ background: linear-gradient(135deg, var(--ice-deep), var(--violet-deep)); color: var(--text-hi); }
+.acct-btn-primary:hover{ filter: brightness(1.15); }
+.acct-btn-danger{ background:none; border-color: rgba(224,138,138,0.5); color: var(--status-danger); }
+.acct-btn-danger:hover{ background: rgba(224,138,138,0.1); }
+.account-error{
+  background: rgba(224,138,138,0.1); border:1px solid rgba(224,138,138,0.4); color: var(--status-danger);
+  padding:.6rem .8rem; border-radius:6px; font-size:.82rem; margin-bottom: var(--sp-3);
+}
+.account-profile{ text-align:center; padding: var(--sp-4) 0 var(--sp-5); }
+.account-avatar{
+  width:64px; height:64px; border-radius:50%; margin:0 auto var(--sp-3);
+  background: linear-gradient(135deg, var(--ice-deep), var(--violet-deep));
+  display:flex; align-items:center; justify-content:center;
+  font-family: var(--font-display); font-size:1.5rem; color: var(--text-hi);
+}
+.account-name{ color: var(--text-hi); font-size:1.05rem; margin-bottom:.2rem; }
+.account-email{ color: var(--text-low); font-size:.8rem; }
+
+/* ---------------------------------------------------------------------
    17. MANGA READER
 --------------------------------------------------------------------- */
 .reader{
@@ -541,6 +582,99 @@ ul{ list-style:none; }
 .reader-nav-btn:hover:not(:disabled){ color: var(--ice); border-color: var(--ice-dim); }
 .reader-nav-btn:disabled{ opacity:.3; cursor:not-allowed; }
 .reader-progress{ font-family: var(--font-mono); font-size:.68rem; color: var(--text-low); }
+
+/* ---------------------------------------------------------------------
+   17b. CHAPTER COMMENTS (Instagram-style, inside reader below last page)
+--------------------------------------------------------------------- */
+.reader-comments{
+  width: 100%; max-width: 900px; margin-top: var(--sp-5); padding: var(--sp-4) var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--hairline);
+}
+.reader-comments h3{ font-family: var(--font-display); color: var(--text-hi); font-size:1.1rem; margin-bottom: var(--sp-3); }
+
+.comment-form{ display:flex; flex-direction:column; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.comment-form textarea{
+  width:100%; min-height:60px; resize:vertical; background: var(--surface-2); border:1px solid var(--hairline-strong);
+  color: var(--text-hi); border-radius:8px; padding:.7rem .8rem; font-family: var(--font-body); outline:none;
+}
+.comment-form textarea:focus{ border-color: var(--ice-dim); }
+.comment-form button{
+  align-self:flex-end; padding:.55rem 1.1rem; border-radius:8px; border:1px solid var(--ice-dim);
+  background: linear-gradient(135deg, var(--ice-deep), var(--violet-deep)); color: var(--text-hi); font-size:.85rem;
+}
+.comment-form button:hover{ filter: brightness(1.15); }
+.comment-login-note{
+  display:flex; align-items:center; justify-content:space-between; gap: var(--sp-3);
+  background: var(--surface); border:1px solid var(--hairline); border-radius:8px;
+  padding: var(--sp-3); margin-bottom: var(--sp-4); font-size:.85rem; color: var(--text-mid); flex-wrap:wrap;
+}
+.comment-login-note button{
+  padding:.5rem 1rem; border-radius:6px; border:1px solid var(--ice-dim); color: var(--ice); background:none; font-size:.8rem;
+}
+.comment-login-note button:hover{ background: rgba(143,211,236,0.08); }
+.comment-empty{ color: var(--text-low); font-size:.85rem; }
+
+/* Quick-emoji compose bar — inserts an emoji into the nearby textarea,
+   it is not a per-comment reaction (see .ig-like-btn for that). */
+.quick-emoji-bar{ display:flex; flex-wrap:wrap; gap:.3rem; }
+.quick-emoji-btn{
+  font-size:1.05rem; line-height:1; padding:.3rem .45rem; border-radius:6px; border:1px solid var(--hairline);
+  background: var(--surface-2);
+}
+.quick-emoji-btn:hover{ border-color: var(--ice-dim); background: var(--surface-3); }
+
+.comment-list{ display:flex; flex-direction:column; gap: var(--sp-4); }
+.comment-thread{ display:flex; flex-direction:column; }
+
+.comment-row{ display:flex; align-items:flex-start; gap: var(--sp-2); }
+.comment-row.is-reply{ margin-left: 2.6rem; margin-top: var(--sp-2); }
+.comment-avatar{
+  width:32px; height:32px; border-radius:50%; flex-shrink:0;
+  background: linear-gradient(135deg, var(--ice-deep), var(--violet-deep));
+  display:flex; align-items:center; justify-content:center; font-family: var(--font-display); font-size:.8rem; color: var(--text-hi);
+}
+.comment-row.is-reply .comment-avatar{ width:26px; height:26px; font-size:.7rem; }
+.comment-body{ flex:1; min-width:0; }
+.comment-line{ display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap; }
+.comment-author{ font-size:.86rem; color: var(--text-hi); font-weight:600; }
+.comment-time{ font-size:.72rem; color: var(--text-low); }
+.comment-text{ font-size:.88rem; color: var(--text-mid); line-height:1.45; margin: .15rem 0 .3rem; white-space:pre-wrap; word-break:break-word; }
+.comment-reply-toggle{ font-size:.76rem; color: var(--text-low); font-weight:600; }
+.comment-reply-toggle:hover{ color: var(--ice); }
+
+/* Instagram-style single heart, on the far right of the row */
+.ig-like-btn{
+  display:flex; flex-direction:column; align-items:center; gap:.15rem;
+  color: var(--text-low); flex-shrink:0; padding-top:.1rem;
+}
+.ig-like-btn svg{ width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; }
+.ig-like-btn.liked{ color: var(--status-danger); }
+.ig-like-btn.liked svg{ fill: currentColor; stroke:currentColor; }
+.ig-like-btn:hover{ color: var(--ice); }
+.ig-like-btn.liked:hover{ color: var(--status-danger); }
+.ig-like-count{ font-size:.68rem; font-family: var(--font-mono); color: var(--text-low); min-height:.9em; }
+
+.comment-replies{ display:flex; flex-direction:column; }
+.view-more-replies{
+  display:flex; align-items:center; gap:.5rem; margin: var(--sp-2) 0 0 2.6rem;
+  font-size:.76rem; color: var(--text-low); font-weight:600;
+}
+.view-more-replies .line{ width:18px; height:1px; background: var(--hairline-strong); display:inline-block; }
+.view-more-replies:hover{ color: var(--ice); }
+.more-replies{ display:flex; flex-direction:column; }
+
+.reply-form{ display:flex; flex-direction:column; gap:.5rem; margin: var(--sp-2) 0 0 2.6rem; }
+.reply-form textarea{
+  min-height:44px; resize:vertical; background: var(--surface-2); border:1px solid var(--hairline-strong);
+  color: var(--text-hi); border-radius:8px; padding:.6rem .7rem; font-family: var(--font-body); outline:none; font-size:.85rem;
+}
+.reply-form textarea:focus{ border-color: var(--ice-dim); }
+.reply-form button{
+  align-self:flex-end; padding:.4rem .9rem; border-radius:8px; border:1px solid var(--ice-dim);
+  background: linear-gradient(135deg, var(--ice-deep), var(--violet-deep)); color: var(--text-hi); font-size:.78rem;
+}
+.reply-form button:hover{ filter: brightness(1.15); }
+
 
 /* ---------------------------------------------------------------------
    18. LIGHTBOX

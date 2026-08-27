@@ -11,10 +11,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Jost:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
 <link rel="stylesheet" href="style.css">
-
-<!-- Firebase: loads live content (manga/chapters/characters/etc.) edited from /admin.
-     If this can't reach Firestore, script.js falls back to its built-in defaults. -->
-<script type="module" src="data-loader.js"></script>
 </head>
 <body>
 
@@ -50,6 +46,9 @@
       <button class="icon-btn" id="bookmarkToggle" aria-label="Bookmarks" title="Bookmarks">
         <svg viewBox="0 0 24 24"><path d="M6 2h12a1 1 0 011 1v18l-7-4.2L5 21V3a1 1 0 011-1z"/></svg>
         <span class="badge" id="bookmarkCount">0</span>
+      </button>
+      <button class="icon-btn" id="accountToggle" aria-label="Account" title="Account">
+        <svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v2h16v-2c0-2.8-3.6-5-8-5z"/></svg>
       </button>
       <button class="hamburger" id="hamburgerBtn" aria-label="Menu" aria-expanded="false">
         <span></span><span></span><span></span>
@@ -89,6 +88,69 @@
     </div>
     <div class="bookmark-list" id="bookmarkList">
       <p class="empty-note">No bookmarks yet. Tap the crystal icon on any manga or chapter to save it here.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     ACCOUNT OVERLAY (reader sign in / register / profile)
+============================================================= -->
+<div class="bookmark-overlay" id="accountOverlay">
+  <div class="bookmark-panel account-panel">
+    <div class="bookmark-head">
+      <h3>Account</h3>
+      <button class="icon-btn" id="accountClose" aria-label="Close account panel">
+        <svg viewBox="0 0 24 24"><path d="M6.4 4.98L12 10.59l5.6-5.6 1.4 1.4-5.6 5.6 5.6 5.6-1.4 1.4-5.6-5.6-5.6 5.6-1.4-1.4 5.6-5.6-5.6-5.6z"/></svg>
+      </button>
+    </div>
+
+    <!-- Logged-out view -->
+    <div id="accountAuthView">
+      <div class="account-tabs">
+        <button class="account-tab active" data-account-tab="login">Sign In</button>
+        <button class="account-tab" data-account-tab="register">Create Account</button>
+      </div>
+
+      <div class="account-error hidden" id="accountError"></div>
+
+      <form id="accountLoginForm" class="account-form">
+        <div class="field">
+          <label for="acctLoginEmail">Email</label>
+          <input type="email" id="acctLoginEmail" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="acctLoginPassword">Password</label>
+          <input type="password" id="acctLoginPassword" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="acct-btn-primary">Sign In</button>
+      </form>
+
+      <form id="accountRegisterForm" class="account-form hidden">
+        <div class="field">
+          <label for="acctRegName">Display Name</label>
+          <input type="text" id="acctRegName" autocomplete="name" required maxlength="40">
+        </div>
+        <div class="field">
+          <label for="acctRegEmail">Email</label>
+          <input type="email" id="acctRegEmail" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="acctRegPassword">Password</label>
+          <input type="password" id="acctRegPassword" autocomplete="new-password" required minlength="6">
+          <div class="account-hint">At least 6 characters.</div>
+        </div>
+        <button type="submit" class="acct-btn-primary">Create Account</button>
+      </form>
+    </div>
+
+    <!-- Logged-in view -->
+    <div id="accountProfileView" class="hidden">
+      <div class="account-profile">
+        <div class="account-avatar" id="accountAvatar">?</div>
+        <div class="account-name" id="accountName">—</div>
+        <div class="account-email" id="accountEmail">—</div>
+      </div>
+      <button class="acct-btn-danger" id="accountLogoutBtn">Sign Out</button>
     </div>
   </div>
 </div>
@@ -330,6 +392,13 @@
 
 <!-- Toast for bookmark confirmations -->
 <div class="toast" id="toast"></div>
+
+<!-- Firebase (compat SDK — works with plain <script> files, no bundler needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-analytics-compat.js"></script>
+<script src="firebase-config.js"></script>
 
 <script src="script.js"></script>
 </body>

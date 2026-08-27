@@ -3,14 +3,97 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // manga, chapters, characters, locations, lore, gallery, news
-    match /{collection}/{docId} {
-      // Anyone can read content — the public site needs this.
-      allow read: if true;
+    function isAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
 
-      // Only a signed-in user (i.e. someone who logged into /admin with
-      // credentials you created in the Firebase Console) can write.
-      allow write: if request.auth != null;
+    // The "admins" collection is how we mark which signed-in accounts are
+    // allowed to write content. Add a document with the admin's UID as the
+    // document ID (any field, e.g. { email: "you@example.com" }) from the
+    // Firebase console. Nobody can write to this collection from the client.
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Public site content: anyone can read (so the homepage loads without
+    // logging in), only authorized admins can write.
+    match /manga/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /chapters/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    // Chapter page images live in a subcollection under each chapter doc
+    // (chapters/{docId}/pageImages/{pageIndex}) so a chapter with many/large
+    // pages never risks exceeding the 1MB document limit.
+    match /chapters/{docId}/{subcollection}/{subDocId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /characters/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /locations/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /lore/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /gallery/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /news/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Site-wide settings (currently just the World Map background image).
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Reader accounts: each user can manage their own public profile doc
+    // (display name/email) used to show comment author names.
+    match /users/{uid} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Chapter comments: anyone can read; any signed-in reader can post a
+    // comment as themselves; likedBy is the only field any signed-in reader
+    // can update on someone else's comment (a like toggle, not an edit).
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() > 0
+                    && request.resource.data.text.size() <= 2000;
+      allow update: if request.auth != null
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy']);
+      allow delete: if isAdmin();
+
+      // Threaded replies under a comment — same rules as top-level comments.
+      match /replies/{replyId} {
+        allow read: if true;
+        allow create: if request.auth != null
+                      && request.resource.data.uid == request.auth.uid
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() > 0
+                      && request.resource.data.text.size() <= 1000;
+        allow update: if request.auth != null
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy']);
+        allow delete: if isAdmin();
+      }
     }
   }
 }

@@ -5,10 +5,8 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**",
-      "README.txt"
+      "README-ADMIN.md"
     ],
-    "cleanUrls": true,
-    "trailingSlash": false,
     "rewrites": [
       { "source": "/admin", "destination": "/admin/index.html" }
     ]

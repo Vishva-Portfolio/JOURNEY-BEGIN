@@ -1,473 +1,996 @@
 /* =====================================================================
    JOURNEY BEGIN — ADMIN PANEL
-   Firebase Auth guards this page; every collection below is edited
-   straight in Firestore and is what data-loader.js reads back on the
-   public site.
+   Handles: Firebase Auth login/logout, admin authorization check, and
+   generic CRUD screens for every content collection used by the public
+   site (manga, chapters, characters, locations, lore, gallery, news).
    ===================================================================== */
 
-import { auth, db } from "../firebase-config.js";
-import {
-  signInWithEmailAndPassword, signOut, onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-import {
-  collection, getDocs, doc, setDoc, addDoc, deleteDoc
-} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+(() => {
+  'use strict';
 
-const $ = (sel, ctx = document) => ctx.querySelector(sel);
-const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
+  const $  = (sel, ctx = document) => ctx.querySelector(sel);
+  const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
 
-/* =====================================================================
-   1. COLLECTION SCHEMAS
-   Drives the sidebar tabs, table columns, and the add/edit form.
-   idField: 'id' means the document ID *is* that field's value (a slug
-   the admin types in). idField: null means Firestore auto-generates
-   the document ID (used for chapters/news, which don't need a slug).
-   ===================================================================== */
-const SCHEMAS = {
-  manga: {
-    label: 'Manga', idField: 'id',
-    columns: ['title', 'status', 'chapters', 'featured'],
-    fields: [
-      { key: 'id', label: 'ID (slug, e.g. ashen-vow)', type: 'text', required: true, lockOnEdit: true },
-      { key: 'title', label: 'Title', type: 'text', required: true },
-      { key: 'author', label: 'Author', type: 'text' },
-      { key: 'genre', label: 'Genre', type: 'text' },
-      { key: 'status', label: 'Status', type: 'select', options: ['Ongoing', 'Coming Soon', 'Completed'] },
-      { key: 'chapters', label: 'Chapter Count', type: 'number' },
-      { key: 'featured', label: 'Featured on homepage', type: 'checkbox' },
-      { key: 'cover', label: 'Cover Image Path/URL', type: 'text' },
-      { key: 'description', label: 'Description', type: 'textarea' }
-    ]
-  },
-  chapters: {
-    label: 'Chapters', idField: null,
-    columns: ['manga', 'number', 'title', 'status', 'pages'],
-    fields: [
-      { key: 'manga', label: 'Manga ID (matches Manga slug)', type: 'text', required: true },
-      { key: 'number', label: 'Chapter Number', type: 'number', required: true },
-      { key: 'title', label: 'Chapter Title', type: 'text' },
-      { key: 'status', label: 'Status', type: 'select', options: ['Available', 'Coming Soon'] },
-      { key: 'pages', label: 'Page Count', type: 'number', hint: 'Reader looks for assets/manga/{manga}/chapter-{number}/page-01.jpg …' }
-    ]
-  },
-  characters: {
-    label: 'Characters', idField: 'id',
-    columns: ['name', 'age'],
-    fields: [
-      { key: 'id', label: 'ID (slug)', type: 'text', required: true, lockOnEdit: true },
-      { key: 'name', label: 'Name', type: 'text', required: true },
-      { key: 'age', label: 'Age', type: 'text' },
-      { key: 'image', label: 'Image Path/URL', type: 'text' },
-      { key: 'short', label: 'Short Bio (card)', type: 'textarea' },
-      { key: 'full', label: 'Full Bio (modal)', type: 'textarea' },
-      { key: 'traits', label: 'Traits (comma separated)', type: 'list' }
-    ]
-  },
-  locations: {
-    label: 'Locations', idField: 'id',
-    columns: ['name', 'x', 'y'],
-    fields: [
-      { key: 'id', label: 'ID (slug)', type: 'text', required: true, lockOnEdit: true },
-      { key: 'name', label: 'Name', type: 'text', required: true },
-      { key: 'x', label: 'Map X (0–100 %)', type: 'number' },
-      { key: 'y', label: 'Map Y (0–100 %)', type: 'number' },
-      { key: 'desc', label: 'Description', type: 'textarea' },
-      { key: 'figures', label: 'Key Figures/Events (comma separated)', type: 'list' }
-    ]
-  },
-  lore: {
-    label: 'Lore', idField: 'id',
-    columns: ['title'],
-    fields: [
-      { key: 'id', label: 'ID (slug)', type: 'text', required: true, lockOnEdit: true },
-      { key: 'title', label: 'Title', type: 'text', required: true },
-      { key: 'body', label: 'Body', type: 'textarea' }
-    ]
-  },
-  gallery: {
-    label: 'Gallery', idField: 'id',
-    columns: ['caption', 'category'],
-    fields: [
-      { key: 'id', label: 'ID (slug, e.g. g9)', type: 'text', required: true, lockOnEdit: true },
-      { key: 'category', label: 'Category', type: 'select', options: ['pages', 'characters', 'concept', 'maps'] },
-      { key: 'src', label: 'Image Path/URL', type: 'text', required: true },
-      { key: 'caption', label: 'Caption', type: 'text' }
-    ]
-  },
-  news: {
-    label: 'News', idField: null,
-    columns: ['date', 'tag', 'title'],
-    fields: [
-      { key: 'tag', label: 'Tag', type: 'text' },
-      { key: 'date', label: 'Date (e.g. Aug 20, 2026)', type: 'text' },
-      { key: 'title', label: 'Headline', type: 'text', required: true },
-      { key: 'desc', label: 'Description', type: 'textarea' }
-    ]
-  }
-};
-
-/* Default content to write on first-time "Seed Default Content" — mirrors
-   the DATA object baked into ../script.js so a fresh Firestore project
-   starts out matching the demo site. */
-const DEFAULTS = {
-  manga: [
-    { id: 'eternity-of-crystal', title: 'Eternity of Crystal', author: 'Vishva & Mathavan', genre: 'Fantasy · Adventure · Mystery', status: 'Ongoing', chapters: 2, featured: true, cover: 'assets/manga/eternity-of-crystal/cover.jpg', description: 'An extraordinary journey begins in a world of crystals, kingdoms, mysteries and destiny.' },
-    { id: 'ashen-vow', title: 'Ashen Vow', author: 'Journey Begin Studio', genre: 'Dark Fantasy · Drama', status: 'Coming Soon', chapters: 0, featured: false, cover: 'assets/manga/ashen-vow/cover.jpg', description: 'A fallen knight seeks redemption in a kingdom built on ash and broken oaths.' },
-    { id: 'silver-static', title: 'Silver Static', author: 'Journey Begin Studio', genre: 'Sci-Fi · Mystery', status: 'Coming Soon', chapters: 0, featured: false, cover: 'assets/manga/silver-static/cover.jpg', description: 'In a city powered by memory, one signal refuses to be erased.' }
-  ],
-  chapters: [
-    { manga: 'eternity-of-crystal', number: 1, title: 'Tale of Crystals', status: 'Available', pages: 6 },
-    { manga: 'eternity-of-crystal', number: 2, title: 'The Silver Kingdom', status: 'Available', pages: 5 },
-    { manga: 'eternity-of-crystal', number: 3, title: 'Echoes of Albia', status: 'Coming Soon', pages: 0 }
-  ],
-  characters: [
-    { id: 'felix', name: 'Felix', age: '17', image: 'assets/characters/felix.jpg', short: 'A determined wanderer bound to the crystal\u2019s first awakening.', full: 'Felix carries a fragment of the Eternity Crystal without knowing why he was chosen. Quick-tempered but fiercely loyal, he is the story\u2019s reluctant compass — pulled toward a destiny far larger than the quiet life he once wanted.', traits: ['Crystal-bound', 'Impulsive', 'Loyal'] },
-    { id: 'richard', name: 'Richard', age: '17', image: 'assets/characters/richard.jpg', short: 'Felix\u2019s closest ally, sharp-minded and quietly protective.', full: 'Richard balances the group with calculation where Felix acts on instinct. Raised among scholars, he reads the world in patterns and prophecy — and is often the first to sense when something ancient has stirred.', traits: ['Strategist', 'Guarded', 'Scholar'] },
-    { id: 'albia', name: 'Albia', age: '15–16', image: 'assets/characters/albia.jpg', short: 'A quiet presence with a fractured connection to the old kingdoms.', full: 'Albia speaks little, but the crystals seem to answer when she is near. Her past is tangled with the fall of a kingdom no one else remembers, and every chapter peels back another layer of what she was made to carry.', traits: ['Mysterious', 'Empathic', 'Kingdom-born'] },
-    { id: 'cyrus', name: 'Cyrus', age: '17', image: 'assets/characters/cyrus.jpg', short: 'Charismatic, restless, and always first into danger.', full: 'Cyrus fights first and asks questions later — a habit that has saved the group as often as it\u2019s endangered them. Beneath the bravado is someone still learning what it costs to protect people he loves.', traits: ['Reckless', 'Charismatic', 'Protector'] },
-    { id: 'ivo', name: 'Ivo', age: '24–27', image: 'assets/characters/ivo.jpg', short: 'An enigmatic elder who knows more than he admits.', full: 'Ivo appears exactly when the group needs guidance — and vanishes just as easily. His knowledge of the crystals runs deeper than any living record should allow, and his motives remain the story\u2019s quietest mystery.', traits: ['Enigmatic', 'Elder', 'Untrusted'] }
-  ],
-  locations: [
-    { id: 'crystal-spire', name: 'The Crystal Spire', x: 28, y: 30, desc: 'A tower of raw crystal said to be the source of the Eternity Crystal itself. Few who enter return unchanged.', figures: ['Felix\u2019s awakening', 'First appearance of Ivo'] },
-    { id: 'silver-kingdom', name: 'The Silver Kingdom', x: 62, y: 22, desc: 'A fortified realm of silver-veined stone, ruled by a crown that has feared the crystals for generations.', figures: ['Richard\u2019s homeland', 'Setting of Chapter 2'] },
-    { id: 'ashfall-woods', name: 'Ashfall Woods', x: 45, y: 62, desc: 'A forest blackened by an event lost to history — locals refuse to speak its name after dark.', figures: ['Albia\u2019s origin', 'Hidden ruins'] },
-    { id: 'hollow-coast', name: 'The Hollow Coast', x: 78, y: 68, desc: 'A shifting coastline where the tide reveals fragments of a kingdom that supposedly never existed.', figures: ['Cyrus\u2019s hometown', 'Smugglers\u2019 routes'] }
-  ],
-  lore: [
-    { id: 'crystals', title: 'Crystals', body: 'The crystals are shards of a single, ancient formation shattered at the dawn of the current age. Each fragment resonates with a different aspect of will, memory, or fate — and each one chooses its bearer, not the other way around.' },
-    { id: 'crystal-powers', title: 'Crystal Powers', body: 'No two crystal-bonds manifest the same power twice. Recorded effects range from accelerated instinct and clairvoyant flashes to the ability to fracture solid stone with a touch — but every power exacts a cost proportional to its strength.' },
-    { id: 'kingdoms', title: 'Kingdoms', body: 'Three kingdoms once shared an uneasy peace over the crystal fields: the Silver Kingdom, the lost realm beneath Ashfall, and a third whose name has been deliberately erased from every surviving record.' },
-    { id: 'weapons', title: 'Weapons', body: 'Crystal-forged weapons are rare and dangerous, drawing power directly from their wielder\u2019s bond. Most were destroyed after the Sundering; the few that remain are hunted by kingdoms and scavengers alike.' },
-    { id: 'ancient-history', title: 'Ancient History', body: 'Long before the current kingdoms, a single empire is said to have controlled the whole of the crystal fields. Its fall — the Sundering — scattered both the crystals and the truth of what caused it.' },
-    { id: 'mysteries', title: 'Mysteries', body: 'Why crystals choose their bearers, what Ivo truly is, and what waits at the center of the Crystal Spire remain unanswered. Journey Begin will unravel these slowly, one chapter at a time.' }
-  ],
-  gallery: [
-    { id: 'g1', category: 'pages', src: 'assets/gallery/page-01.jpg', caption: 'Chapter 1 — Page 3' },
-    { id: 'g2', category: 'pages', src: 'assets/gallery/page-02.jpg', caption: 'Chapter 1 — Page 5' },
-    { id: 'g3', category: 'characters', src: 'assets/gallery/felix-art.jpg', caption: 'Felix — Character Art' },
-    { id: 'g4', category: 'characters', src: 'assets/gallery/albia-art.jpg', caption: 'Albia — Character Art' },
-    { id: 'g5', category: 'concept', src: 'assets/gallery/concept-spire.jpg', caption: 'Concept — The Crystal Spire' },
-    { id: 'g6', category: 'concept', src: 'assets/gallery/concept-kingdom.jpg', caption: 'Concept — Silver Kingdom Gate' },
-    { id: 'g7', category: 'maps', src: 'assets/gallery/world-map.jpg', caption: 'Full World Map' },
-    { id: 'g8', category: 'pages', src: 'assets/gallery/page-03.jpg', caption: 'Chapter 2 — Page 2' }
-  ],
-  news: [
-    { tag: 'Chapter Release', date: 'Aug 20, 2026', title: 'Chapter 2 — The Silver Kingdom is live', desc: 'Felix and Richard cross into the Silver Kingdom, and nothing about it is what the old stories promised.' },
-    { tag: 'Character Reveal', date: 'Aug 12, 2026', title: 'Meet Ivo, the wanderer with no past', desc: 'Our fifth character profile is up — an elder whose knowledge of the crystals runs deeper than anyone expects.' },
-    { tag: 'Artwork', date: 'Aug 3, 2026', title: 'New concept art: the Crystal Spire', desc: 'Early environment concept work for the tower at the center of it all, now in the Gallery.' },
-    { tag: 'Development', date: 'Jul 22, 2026', title: 'Journey Begin platform enters open beta', desc: 'Search, bookmarks and the vertical reader are live across desktop and mobile.' }
-  ]
-};
-
-/* =====================================================================
-   2. STATE
-   ===================================================================== */
-let currentTab = 'manga';
-let rows = [];         // rows for the active tab, each with _docId attached
-let editingDocId = null;
-
-/* =====================================================================
-   3. AUTH
-   ===================================================================== */
-const loginScreen = $('#loginScreen');
-const dashScreen = $('#dashScreen');
-
-onAuthStateChanged(auth, (user) => {
-  if (user) {
-    loginScreen.hidden = true;
-    dashScreen.hidden = false;
-    $('#adminUserEmail').textContent = user.email || '';
-    initSidebar();
-    loadTab(currentTab);
-  } else {
-    dashScreen.hidden = true;
-    loginScreen.hidden = false;
-  }
-});
-
-$('#loginForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = $('#loginEmail').value.trim();
-  const password = $('#loginPassword').value;
-  const errEl = $('#loginError');
-  const btn = $('#loginBtn');
-  errEl.textContent = '';
-  btn.disabled = true;
-  try {
-    await signInWithEmailAndPassword(auth, email, password);
-  } catch (err) {
-    errEl.textContent = friendlyAuthError(err);
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-$('#logoutBtn').addEventListener('click', () => signOut(auth));
-
-function friendlyAuthError(err) {
-  const code = err?.code || '';
-  if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')) {
-    return 'Incorrect email or password.';
-  }
-  if (code.includes('too-many-requests')) return 'Too many attempts — try again shortly.';
-  return 'Sign-in failed. ' + (err?.message || '');
-}
-
-/* =====================================================================
-   4. SIDEBAR / TABS
-   ===================================================================== */
-function initSidebar() {
-  const nav = $('#adminSidebar');
-  nav.innerHTML = '';
-  Object.keys(SCHEMAS).forEach((key) => {
-    const btn = document.createElement('button');
-    btn.className = 'admin-tab' + (key === currentTab ? ' active' : '');
-    btn.textContent = SCHEMAS[key].label;
-    btn.dataset.tab = key;
-    btn.addEventListener('click', () => {
-      currentTab = key;
-      $$('.admin-tab', nav).forEach((b) => b.classList.toggle('active', b.dataset.tab === key));
-      loadTab(key);
-    });
-    nav.appendChild(btn);
-  });
-}
-
-/* =====================================================================
-   5. TABLE
-   ===================================================================== */
-async function loadTab(tab) {
-  const schema = SCHEMAS[tab];
-  $('#panelTitle').textContent = schema.label;
-  setStatus('Loading…');
-  $('#tableBody').innerHTML = '';
-  $('#tableEmpty').hidden = true;
-
-  try {
-    const snap = await getDocs(collection(db, tab));
-    rows = snap.docs.map((d) => ({ _docId: d.id, ...d.data() }));
-    renderTable(tab);
-    setStatus(`${rows.length} item${rows.length === 1 ? '' : 's'}`, 'ok');
-  } catch (err) {
-    setStatus('Could not load this collection — check Firestore rules / connection.', 'error');
-    console.error(err);
-  }
-}
-
-function renderTable(tab) {
-  const schema = SCHEMAS[tab];
-  const head = $('#tableHead');
-  const body = $('#tableBody');
-
-  head.innerHTML = '<tr>' + schema.columns.map((c) => `<th>${labelFor(schema, c)}</th>`).join('') + '<th></th></tr>';
-
-  if (!rows.length) {
-    $('#tableEmpty').hidden = false;
-    body.innerHTML = '';
+  const fb = window.jbFirebase;
+  if (!fb) {
+    alert('Firebase failed to load. Check your internet connection and that firebase-config.js is present.');
     return;
   }
-  $('#tableEmpty').hidden = true;
+  const auth = fb.auth;
+  const db = fb.db;
 
-  body.innerHTML = rows.map((row) => {
-    const cells = schema.columns.map((c) => {
-      let v = row[c];
-      if (Array.isArray(v)) v = v.join(', ');
-      if (typeof v === 'boolean') v = v ? 'Yes' : 'No';
-      return `<td class="truncate">${escapeHTML(v ?? '')}</td>`;
-    }).join('');
-    return `<tr data-doc="${row._docId}">${cells}<td class="col-actions">Edit</td></tr>`;
-  }).join('');
-
-  $$('tr', body).forEach((tr) => {
-    tr.addEventListener('click', () => openModal(tab, tr.dataset.doc));
-  });
-}
-
-function labelFor(schema, colKey) {
-  const f = schema.fields.find((f) => f.key === colKey);
-  return f ? f.label.replace(/\s*\(.*?\)\s*/g, '') : colKey;
-}
-
-function setStatus(msg, kind) {
-  const el = $('#adminStatus');
-  el.textContent = msg;
-  el.className = 'admin-status' + (kind ? ' ' + kind : '');
-}
-
-/* =====================================================================
-   6. ADD / EDIT MODAL
-   ===================================================================== */
-const overlay = $('#modalOverlay');
-
-$('#addBtn').addEventListener('click', () => openModal(currentTab, null));
-$('#modalClose').addEventListener('click', closeModal);
-$('#modalCancel').addEventListener('click', closeModal);
-overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
-
-function openModal(tab, docId) {
-  const schema = SCHEMAS[tab];
-  editingDocId = docId;
-  const row = docId ? rows.find((r) => r._docId === docId) : null;
-
-  $('#modalTitle').textContent = docId ? `Edit ${schema.label.replace(/s$/, '')}` : `Add ${schema.label.replace(/s$/, '')}`;
-  $('#modalError').textContent = '';
-  $('#modalDelete').hidden = !docId;
-
-  const fieldsEl = $('#modalFields');
-  fieldsEl.innerHTML = '';
-  schema.fields.forEach((f) => {
-    const value = row ? row[f.key] : undefined;
-    fieldsEl.appendChild(buildField(f, value, !!(docId && f.lockOnEdit)));
-  });
-
-  overlay.hidden = false;
-}
-
-function closeModal() {
-  overlay.hidden = true;
-  editingDocId = null;
-}
-
-function buildField(f, value, locked) {
-  const wrap = document.createElement('label');
-  wrap.className = 'admin-field' + (f.type === 'checkbox' ? ' admin-field-check' : '');
-
-  if (f.type === 'checkbox') {
-    wrap.innerHTML = `<span>${f.label}</span>`;
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.name = f.key;
-    input.checked = !!value;
-    wrap.appendChild(input);
-    return wrap;
-  }
-
-  const label = document.createElement('span');
-  label.textContent = f.label + (f.required ? ' *' : '');
-  wrap.appendChild(label);
-
-  let input;
-  if (f.type === 'textarea') {
-    input = document.createElement('textarea');
-    input.value = value ?? '';
-  } else if (f.type === 'select') {
-    input = document.createElement('select');
-    f.options.forEach((opt) => {
-      const o = document.createElement('option');
-      o.value = opt; o.textContent = opt;
-      if (value === opt) o.selected = true;
-      input.appendChild(o);
+  /* =====================================================================
+     IMAGE COMPRESSION (client-side, no Firebase Storage / billing needed)
+     Resizes + re-encodes an uploaded file to a JPEG/PNG data URL small
+     enough to store safely as a Firestore field, iterating down in
+     quality/size until it fits under maxBytes (approx, based on string
+     length since base64 ~= actual byte count for our purposes).
+  ===================================================================== */
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
     });
-  } else {
-    input = document.createElement('input');
-    input.type = f.type === 'number' ? 'number' : 'text';
-    if (f.type === 'list') {
-      input.type = 'text';
-      input.value = Array.isArray(value) ? value.join(', ') : (value ?? '');
-      input.placeholder = 'comma, separated, values';
-    } else {
-      input.value = value ?? '';
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  function drawToDataURL(img, maxDim, quality, mime) {
+    let { width, height } = img;
+    if (width > maxDim || height > maxDim) {
+      const scale = maxDim / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
     }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL(mime, quality);
   }
-  input.name = f.key;
-  if (f.required) input.required = true;
-  if (locked) { input.disabled = true; input.title = 'The ID can\u2019t be changed after creation.'; }
-  wrap.appendChild(input);
 
-  if (f.hint) {
-    const hint = document.createElement('small');
-    hint.style.cssText = 'color:var(--text-low);font-size:.72rem;';
-    hint.textContent = f.hint;
-    wrap.appendChild(hint);
+  async function fileToSafeDataURL(file, maxBytes = 700000) {
+    const raw = await readFileAsDataURL(file);
+    const img = await loadImage(raw);
+    const mime = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    let maxDim = 1600;
+    let quality = 0.82;
+    let dataUrl = drawToDataURL(img, maxDim, quality, mime);
+
+    let attempts = 0;
+    while (dataUrl.length > maxBytes && attempts < 6) {
+      quality = Math.max(0.4, quality - 0.12);
+      maxDim = Math.round(maxDim * 0.85);
+      dataUrl = drawToDataURL(img, maxDim, quality, mime);
+      attempts++;
+    }
+    return dataUrl;
   }
-  return wrap;
-}
 
-$('#modalForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const schema = SCHEMAS[currentTab];
-  const data = {};
-  const errEl = $('#modalError');
-  errEl.textContent = '';
+  /* =====================================================================
+     TOAST
+  ===================================================================== */
+  function toast(msg, isError = false) {
+    const el = $('#toast');
+    el.textContent = msg;
+    el.classList.toggle('error', isError);
+    el.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => el.classList.remove('show'), 2600);
+  }
 
-  schema.fields.forEach((f) => {
-    const input = $(`[name="${f.key}"]`, $('#modalFields'));
-    if (!input) return;
-    if (f.type === 'checkbox') { data[f.key] = input.checked; return; }
-    if (f.type === 'number') { data[f.key] = input.value === '' ? 0 : Number(input.value); return; }
-    if (f.type === 'list') { data[f.key] = input.value.split(',').map((s) => s.trim()).filter(Boolean); return; }
-    data[f.key] = input.value;
+  /* =====================================================================
+     COLLECTION SCHEMA
+     idField: 'slug'  -> admin chooses the document ID (must match the ids
+              referenced elsewhere, e.g. manga.id used by chapters.manga)
+     idField: null    -> Firestore auto-generates the document ID
+  ===================================================================== */
+  const COLLECTIONS = {
+    manga: {
+      label: 'Manga',
+      idField: 'slug',
+      idHint: 'Lowercase, dash-separated — e.g. eternity-of-crystal. This id is referenced by Chapters.',
+      fields: [
+        { key: 'title', label: 'Title', type: 'text', required: true },
+        { key: 'author', label: 'Author', type: 'text' },
+        { key: 'genre', label: 'Genre', type: 'text' },
+        { key: 'status', label: 'Status', type: 'select', options: ['Ongoing', 'Coming Soon', 'Completed'] },
+        { key: 'chapters', label: 'Chapter Count', type: 'number' },
+        { key: 'featured', label: 'Featured on homepage', type: 'checkbox' },
+        { key: 'cover', label: 'Cover Image', type: 'image', folder: 'manga' },
+        { key: 'description', label: 'Description', type: 'textarea', full: true }
+      ],
+      columns: ['title', 'genre', 'status', 'chapters']
+    },
+    chapters: {
+      label: 'Chapters',
+      idField: null,
+      fields: [
+        { key: 'manga', label: 'Manga id (must match a Manga slug)', type: 'text', required: true },
+        { key: 'number', label: 'Chapter Number', type: 'number', required: true },
+        { key: 'title', label: 'Chapter Title', type: 'text' },
+        { key: 'status', label: 'Status', type: 'select', options: ['Available', 'Coming Soon'] },
+        { key: 'pageImages', label: 'Chapter Pages (upload in reading order)', type: 'image-list', folder: 'chapters', full: true },
+        { key: 'pages', label: 'Page Count (only used if you are not uploading pages above — see README)', type: 'number' }
+      ],
+      columns: ['manga', 'number', 'title', 'status', 'pages']
+    },
+    characters: {
+      label: 'Characters',
+      idField: 'slug',
+      idHint: 'Lowercase, dash-separated — e.g. felix.',
+      fields: [
+        { key: 'name', label: 'Name', type: 'text', required: true },
+        { key: 'age', label: 'Age', type: 'text' },
+        { key: 'image', label: 'Portrait Image', type: 'image', folder: 'characters' },
+        { key: 'short', label: 'Short Bio (card preview)', type: 'textarea' },
+        { key: 'full', label: 'Full Bio (modal)', type: 'textarea', full: true },
+        { key: 'traits', label: 'Traits (comma separated)', type: 'list' }
+      ],
+      columns: ['name', 'age']
+    },
+    locations: {
+      label: 'World Locations',
+      idField: 'slug',
+      idHint: 'Lowercase, dash-separated — e.g. crystal-spire.',
+      mapPicker: true,
+      fields: [
+        { key: 'name', label: 'Name', type: 'text', required: true },
+        { key: 'position', label: 'Position on Map', type: 'map-position', full: true },
+        { key: 'desc', label: 'Description', type: 'textarea', full: true },
+        { key: 'figures', label: 'Key figures / events (comma separated)', type: 'list' }
+      ],
+      columns: ['name']
+    },
+    lore: {
+      label: 'Lore',
+      idField: 'slug',
+      idHint: 'Lowercase, dash-separated — e.g. crystals.',
+      fields: [
+        { key: 'title', label: 'Title', type: 'text', required: true },
+        { key: 'body', label: 'Body', type: 'textarea', full: true }
+      ],
+      columns: ['title']
+    },
+    gallery: {
+      label: 'Gallery',
+      idField: null,
+      fields: [
+        { key: 'category', label: 'Category', type: 'select', options: ['pages', 'characters', 'concept', 'maps'] },
+        { key: 'src', label: 'Image', type: 'image', folder: 'gallery' },
+        { key: 'caption', label: 'Caption', type: 'text' }
+      ],
+      columns: ['category', 'caption']
+    },
+    news: {
+      label: 'News',
+      idField: null,
+      fields: [
+        { key: 'tag', label: 'Tag', type: 'text' },
+        { key: 'date', label: 'Date (e.g. Aug 20, 2026)', type: 'text' },
+        { key: 'title', label: 'Title', type: 'text', required: true },
+        { key: 'desc', label: 'Description', type: 'textarea', full: true }
+      ],
+      columns: ['date', 'tag', 'title']
+    }
+  };
+
+  /* =====================================================================
+     DEFAULT SEED DATA — same content the site ships with, used only by
+     the "Import starter content" button on an empty collection.
+  ===================================================================== */
+  const DEFAULTS = {
+    manga: [
+      { slug: 'eternity-of-crystal', title: 'Eternity of Crystal', author: 'Vishva & Mathavan', genre: 'Fantasy · Adventure · Mystery', status: 'Ongoing', chapters: 2, featured: true, cover: 'assets/manga/eternity-of-crystal/cover.jpg', description: 'An extraordinary journey begins in a world of crystals, kingdoms, mysteries and destiny.' },
+      { slug: 'ashen-vow', title: 'Ashen Vow', author: 'Journey Begin Studio', genre: 'Dark Fantasy · Drama', status: 'Coming Soon', chapters: 0, featured: false, cover: 'assets/manga/ashen-vow/cover.jpg', description: 'A fallen knight seeks redemption in a kingdom built on ash and broken oaths.' },
+      { slug: 'silver-static', title: 'Silver Static', author: 'Journey Begin Studio', genre: 'Sci-Fi · Mystery', status: 'Coming Soon', chapters: 0, featured: false, cover: 'assets/manga/silver-static/cover.jpg', description: 'In a city powered by memory, one signal refuses to be erased.' }
+    ],
+    chapters: [
+      { manga: 'eternity-of-crystal', number: 1, title: 'Tale of Crystals', status: 'Available', pages: 6 },
+      { manga: 'eternity-of-crystal', number: 2, title: 'The Silver Kingdom', status: 'Available', pages: 5 },
+      { manga: 'eternity-of-crystal', number: 3, title: 'Echoes of Albia', status: 'Coming Soon', pages: 0 }
+    ],
+    characters: [
+      { slug: 'felix', name: 'Felix', age: '17', image: 'assets/characters/felix.jpg', short: 'A determined wanderer bound to the crystal’s first awakening.', full: 'Felix carries a fragment of the Eternity Crystal without knowing why he was chosen. Quick-tempered but fiercely loyal, he is the story’s reluctant compass — pulled toward a destiny far larger than the quiet life he once wanted.', traits: ['Crystal-bound', 'Impulsive', 'Loyal'] },
+      { slug: 'richard', name: 'Richard', age: '17', image: 'assets/characters/richard.jpg', short: 'Felix’s closest ally, sharp-minded and quietly protective.', full: 'Richard balances the group with calculation where Felix acts on instinct. Raised among scholars, he reads the world in patterns and prophecy — and is often the first to sense when something ancient has stirred.', traits: ['Strategist', 'Guarded', 'Scholar'] },
+      { slug: 'albia', name: 'Albia', age: '15–16', image: 'assets/characters/albia.jpg', short: 'A quiet presence with a fractured connection to the old kingdoms.', full: 'Albia speaks little, but the crystals seem to answer when she is near. Her past is tangled with the fall of a kingdom no one else remembers, and every chapter peels back another layer of what she was made to carry.', traits: ['Mysterious', 'Empathic', 'Kingdom-born'] },
+      { slug: 'cyrus', name: 'Cyrus', age: '17', image: 'assets/characters/cyrus.jpg', short: 'Charismatic, restless, and always first into danger.', full: 'Cyrus fights first and asks questions later — a habit that has saved the group as often as it’s endangered them. Beneath the bravado is someone still learning what it costs to protect people he loves.', traits: ['Reckless', 'Charismatic', 'Protector'] },
+      { slug: 'ivo', name: 'Ivo', age: '24–27', image: 'assets/characters/ivo.jpg', short: 'An enigmatic elder who knows more than he admits.', full: 'Ivo appears exactly when the group needs guidance — and vanishes just as easily. His knowledge of the crystals runs deeper than any living record should allow, and his motives remain the story’s quietest mystery.', traits: ['Enigmatic', 'Elder', 'Untrusted'] }
+    ],
+    locations: [
+      { slug: 'crystal-spire', name: 'The Crystal Spire', x: 28, y: 30, desc: 'A tower of raw crystal said to be the source of the Eternity Crystal itself. Few who enter return unchanged.', figures: ['Felix’s awakening', 'First appearance of Ivo'] },
+      { slug: 'silver-kingdom', name: 'The Silver Kingdom', x: 62, y: 22, desc: 'A fortified realm of silver-veined stone, ruled by a crown that has feared the crystals for generations.', figures: ['Richard’s homeland', 'Setting of Chapter 2'] },
+      { slug: 'ashfall-woods', name: 'Ashfall Woods', x: 45, y: 62, desc: 'A forest blackened by an event lost to history — locals refuse to speak its name after dark.', figures: ['Albia’s origin', 'Hidden ruins'] },
+      { slug: 'hollow-coast', name: 'The Hollow Coast', x: 78, y: 68, desc: 'A shifting coastline where the tide reveals fragments of a kingdom that supposedly never existed.', figures: ['Cyrus’s hometown', 'Smugglers’ routes'] }
+    ],
+    lore: [
+      { slug: 'crystals', title: 'Crystals', body: 'The crystals are shards of a single, ancient formation shattered at the dawn of the current age. Each fragment resonates with a different aspect of will, memory, or fate — and each one chooses its bearer, not the other way around.' },
+      { slug: 'crystal-powers', title: 'Crystal Powers', body: 'No two crystal-bonds manifest the same power twice. Recorded effects range from accelerated instinct and clairvoyant flashes to the ability to fracture solid stone with a touch — but every power exacts a cost proportional to its strength.' },
+      { slug: 'kingdoms', title: 'Kingdoms', body: 'Three kingdoms once shared an uneasy peace over the crystal fields: the Silver Kingdom, the lost realm beneath Ashfall, and a third whose name has been deliberately erased from every surviving record.' },
+      { slug: 'weapons', title: 'Weapons', body: 'Crystal-forged weapons are rare and dangerous, drawing power directly from their wielder’s bond. Most were destroyed after the Sundering; the few that remain are hunted by kingdoms and scavengers alike.' },
+      { slug: 'ancient-history', title: 'Ancient History', body: 'Long before the current kingdoms, a single empire is said to have controlled the whole of the crystal fields. Its fall — the Sundering — scattered both the crystals and the truth of what caused it.' },
+      { slug: 'mysteries', title: 'Mysteries', body: 'Why crystals choose their bearers, what Ivo truly is, and what waits at the center of the Crystal Spire remain unanswered. Journey Begin will unravel these slowly, one chapter at a time.' }
+    ],
+    gallery: [
+      { category: 'pages', src: 'assets/gallery/page-01.jpg', caption: 'Chapter 1 — Page 3' },
+      { category: 'pages', src: 'assets/gallery/page-02.jpg', caption: 'Chapter 1 — Page 5' },
+      { category: 'characters', src: 'assets/gallery/felix-art.jpg', caption: 'Felix — Character Art' },
+      { category: 'characters', src: 'assets/gallery/albia-art.jpg', caption: 'Albia — Character Art' },
+      { category: 'concept', src: 'assets/gallery/concept-spire.jpg', caption: 'Concept — The Crystal Spire' },
+      { category: 'concept', src: 'assets/gallery/concept-kingdom.jpg', caption: 'Concept — Silver Kingdom Gate' },
+      { category: 'maps', src: 'assets/gallery/world-map.jpg', caption: 'Full World Map' },
+      { category: 'pages', src: 'assets/gallery/page-03.jpg', caption: 'Chapter 2 — Page 2' }
+    ],
+    news: [
+      { tag: 'Chapter Release', date: 'Aug 20, 2026', title: 'Chapter 2 — The Silver Kingdom is live', desc: 'Felix and Richard cross into the Silver Kingdom, and nothing about it is what the old stories promised.' },
+      { tag: 'Character Reveal', date: 'Aug 12, 2026', title: 'Meet Ivo, the wanderer with no past', desc: 'Our fifth character profile is up — an elder whose knowledge of the crystals runs deeper than anyone expects.' },
+      { tag: 'Artwork', date: 'Aug 3, 2026', title: 'New concept art: the Crystal Spire', desc: 'Early environment concept work for the tower at the center of it all, now in the Gallery.' },
+      { tag: 'Development', date: 'Jul 22, 2026', title: 'Journey Begin platform enters open beta', desc: 'Search, bookmarks and the vertical reader are live across desktop and mobile.' }
+    ]
+  };
+
+  let currentSection = 'manga';
+  let editingId = null; // null = creating new doc
+  let pendingNewId = null; // pre-generated doc id for new auto-id docs that need a subcollection before saving
+  const imageListState = {}; // { fieldKey: [dataUrl, dataUrl, ...] } — live state for image-list fields in the open form
+  let pendingMapPosition = { x: 50, y: 50 }; // live state for the "map-position" click-to-place field
+
+  /* =====================================================================
+     AUTH
+  ===================================================================== */
+  const loginWrap = $('#loginWrap');
+  const dashWrap = $('#dashWrap');
+  const loginForm = $('#loginForm');
+  const loginError = $('#loginError');
+
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    loginError.classList.add('hidden');
+    const email = $('#loginEmail').value.trim();
+    const password = $('#loginPassword').value;
+    const btn = $('#loginSubmit');
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+    try {
+      await auth.signInWithEmailAndPassword(email, password);
+      // onAuthStateChanged below takes it from here
+    } catch (err) {
+      loginError.textContent = friendlyAuthError(err);
+      loginError.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+    }
   });
 
-  try {
-    if (schema.idField) {
-      // slug-keyed collection: doc ID == data[idField]
-      const docId = editingDocId || data[schema.idField];
-      if (!docId) { errEl.textContent = 'ID is required.'; return; }
-      await setDoc(doc(db, currentTab, docId), data);
-    } else if (editingDocId) {
-      await setDoc(doc(db, currentTab, editingDocId), data);
-    } else {
-      await addDoc(collection(db, currentTab), data);
+  $('#logoutBtn').addEventListener('click', () => auth.signOut());
+
+  function friendlyAuthError(err) {
+    const code = err && err.code || '';
+    if (code.includes('user-not-found') || code.includes('wrong-password') || code.includes('invalid-credential')) {
+      return 'Incorrect email or password.';
     }
-    closeModal();
-    loadTab(currentTab);
-    toast('Saved');
-  } catch (err) {
-    errEl.textContent = 'Save failed: ' + (err?.message || err);
+    if (code.includes('too-many-requests')) return 'Too many attempts. Please wait and try again.';
+    if (code.includes('invalid-email')) return 'That email address looks invalid.';
+    return 'Sign-in failed. Please try again.';
   }
-});
 
-$('#modalDelete').addEventListener('click', async () => {
-  if (!editingDocId) return;
-  if (!confirm('Delete this item? This can\u2019t be undone.')) return;
-  try {
-    await deleteDoc(doc(db, currentTab, editingDocId));
-    closeModal();
-    loadTab(currentTab);
-    toast('Deleted');
-  } catch (err) {
-    $('#modalError').textContent = 'Delete failed: ' + (err?.message || err);
+  auth.onAuthStateChanged(async (user) => {
+    if (!user) {
+      dashWrap.classList.add('hidden');
+      loginWrap.classList.remove('hidden');
+      return;
+    }
+    // Check this user is an authorized admin (doc must exist at admins/{uid})
+    try {
+      const adminDoc = await db.collection('admins').doc(user.uid).get();
+      if (!adminDoc.exists) {
+        loginError.textContent = 'This account is not authorized for admin access.';
+        loginError.classList.remove('hidden');
+        await auth.signOut();
+        return;
+      }
+    } catch (err) {
+      loginError.textContent = 'Could not verify admin access. Check Firestore rules / connection.';
+      loginError.classList.remove('hidden');
+      await auth.signOut();
+      return;
+    }
+
+    loginWrap.classList.add('hidden');
+    dashWrap.classList.remove('hidden');
+    $('#sideUserEmail').textContent = user.email;
+    renderSection(currentSection);
+  });
+
+  /* =====================================================================
+     NAV
+  ===================================================================== */
+  $$('.side-link').forEach(link => {
+    link.addEventListener('click', () => {
+      $$('.side-link').forEach(l => l.classList.remove('active'));
+      link.classList.add('active');
+      currentSection = link.dataset.section;
+      editingId = null;
+      renderSection(currentSection);
+    });
+  });
+
+  /* =====================================================================
+     SECTION RENDER (list + form)
+  ===================================================================== */
+  let worldMapImageUrl = null; // cached once fetched from settings/worldMap
+
+  async function fetchWorldMapImage() {
+    if (worldMapImageUrl !== null) return worldMapImageUrl;
+    try {
+      const doc = await db.collection('settings').doc('worldMap').get();
+      worldMapImageUrl = (doc.exists && doc.data().image) || '';
+    } catch (e) {
+      worldMapImageUrl = '';
+    }
+    return worldMapImageUrl;
   }
-});
 
-/* =====================================================================
-   7. SEED DEFAULT CONTENT
-   ===================================================================== */
-$('#seedBtn').addEventListener('click', async () => {
-  if (!confirm('This adds the built-in demo content to every empty collection (existing items are left untouched). Continue?')) return;
-  setStatus('Seeding…');
-  try {
-    for (const [name, items] of Object.entries(DEFAULTS)) {
-      const schema = SCHEMAS[name];
-      const existing = await getDocs(collection(db, name));
-      if (!existing.empty) continue; // don't clobber real content
-      for (const item of items) {
-        if (schema.idField) {
-          await setDoc(doc(db, name, item[schema.idField]), item);
-        } else {
-          await addDoc(collection(db, name), item);
+  async function renderSection(name) {
+    const cfg = COLLECTIONS[name];
+    const main = $('#mainPanel');
+    main.innerHTML = `
+      <div class="panel-head">
+        <div>
+          <h2>${cfg.label}</h2>
+          <div class="sub">Changes here update the live site the next time it loads.</div>
+        </div>
+        <div class="panel-actions">
+          <button class="btn btn-sm" id="seedBtn">Import starter content</button>
+          <button class="btn btn-primary btn-sm" id="newBtn">+ Add New</button>
+        </div>
+      </div>
+      ${cfg.mapPicker ? `
+        <div class="card" id="worldMapCard">
+          <h3>World Map Background</h3>
+          <p class="sub" style="margin-bottom:0.8rem;">Upload the map image once here — then each location below is placed by clicking directly on it, no coordinates to type.</p>
+          <div class="image-upload-row">
+            <div class="image-preview" id="worldMapPreview" style="width:160px; height:100px;">Loading…</div>
+            <div style="flex:1;">
+              <input type="file" id="worldMapFile" accept="image/*">
+              <div class="upload-progress" id="worldMapProgress"></div>
+            </div>
+          </div>
+        </div>
+      ` : ''}
+      <div class="card hidden" id="formCard"></div>
+      <div class="card">
+        <h3>Existing entries</h3>
+        <div id="listWrap"><div class="loading-line">Loading…</div></div>
+      </div>
+    `;
+
+    $('#newBtn').addEventListener('click', () => openForm(name, null));
+    $('#seedBtn').addEventListener('click', () => seedDefaults(name));
+
+    if (cfg.mapPicker) wireWorldMapCard();
+
+    await refreshList(name);
+  }
+
+  async function wireWorldMapCard() {
+    const preview = $('#worldMapPreview');
+    const fileInput = $('#worldMapFile');
+    const progress = $('#worldMapProgress');
+
+    const url = await fetchWorldMapImage();
+    if (url) {
+      preview.style.backgroundImage = `url('${url}')`;
+      preview.textContent = '';
+    } else {
+      preview.textContent = 'No map yet';
+    }
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      progress.textContent = 'Processing…';
+      try {
+        const dataUrl = await fileToSafeDataURL(file, 900000);
+        await db.collection('settings').doc('worldMap').set({ image: dataUrl }, { merge: true });
+        worldMapImageUrl = dataUrl;
+        preview.style.backgroundImage = `url('${dataUrl}')`;
+        preview.textContent = '';
+        progress.textContent = 'Saved ✓';
+        toast('World map image updated.');
+      } catch (err) {
+        progress.textContent = 'Failed: ' + (err.message || err);
+      }
+    });
+  }
+
+  async function refreshList(name) {
+    const cfg = COLLECTIONS[name];
+    const listWrap = $('#listWrap');
+    try {
+      const snap = await db.collection(name).get();
+      if (snap.empty) {
+        listWrap.innerHTML = `<p class="loading-line">No entries yet. Use “Add New” or “Import starter content” to get started.</p>`;
+        return;
+      }
+      const docs = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+
+      // Sort chapters/news in a sensible order for editing.
+      if (name === 'chapters') docs.sort((a, b) => (a.manga || '').localeCompare(b.manga || '') || (a.number || 0) - (b.number || 0));
+      if (name === 'news') docs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+      const thumbCol = cfg.fields.some(f => f.type === 'image');
+
+      listWrap.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              ${thumbCol ? '<th></th>' : ''}
+              ${cfg.columns.map(c => `<th>${labelFor(cfg, c)}</th>`).join('')}
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${docs.map(doc => rowHTML(cfg, doc, thumbCol)).join('')}
+          </tbody>
+        </table>
+      `;
+
+      $$('[data-edit]', listWrap).forEach(btn => {
+        btn.addEventListener('click', () => {
+          const doc = docs.find(d => d._id === btn.dataset.edit);
+          openForm(name, doc);
+        });
+      });
+      $$('[data-del]', listWrap).forEach(btn => {
+        btn.addEventListener('click', () => deleteDoc(name, btn.dataset.del));
+      });
+    } catch (err) {
+      listWrap.innerHTML = `<p class="loading-line">Could not load entries: ${escapeHTML(err.message || String(err))}</p>`;
+    }
+  }
+
+  function labelFor(cfg, key) {
+    const f = cfg.fields.find(f => f.key === key);
+    return f ? f.label.replace(/\s*\(.+\)$/, '') : key;
+  }
+
+  function rowHTML(cfg, doc, thumbCol) {
+    const imageField = cfg.fields.find(f => f.type === 'image');
+    return `
+      <tr>
+        ${thumbCol ? `<td>${imageField && doc[imageField.key] ? `<img class="cell-thumb" src="${escapeHTML(doc[imageField.key])}" onerror="this.style.visibility='hidden'">` : ''}</td>` : ''}
+        ${cfg.columns.map(c => `<td>${formatCell(doc[c])}</td>`).join('')}
+        <td class="row-actions">
+          <button class="btn btn-sm" data-edit="${doc._id}">Edit</button>
+          <button class="btn btn-sm btn-danger" data-del="${doc._id}">Delete</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  function formatCell(v) {
+    if (v === undefined || v === null) return '';
+    if (Array.isArray(v)) return escapeHTML(v.join(', '));
+    if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+    return escapeHTML(String(v));
+  }
+
+  function escapeHTML(s = '') {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  /* =====================================================================
+     FORM (create / edit)
+  ===================================================================== */
+  function openForm(name, doc) {
+    const cfg = COLLECTIONS[name];
+    editingId = doc ? doc._id : null;
+    pendingNewId = null;
+    const formCard = $('#formCard');
+    formCard.classList.remove('hidden');
+
+    const hasImageList = cfg.fields.some(f => f.type === 'image-list');
+    // Auto-id collections (chapters, gallery, news) that use image-list fields
+    // need a doc id up front so page-subcollection writes have somewhere to
+    // go, even before the parent document itself is saved.
+    if (!doc && !cfg.idField && hasImageList) {
+      pendingNewId = db.collection(name).doc().id;
+    }
+
+    const idFieldHTML = cfg.idField ? `
+      <div class="field full">
+        <label for="f_docid">Document ID ${doc ? '(cannot be changed)' : ''}</label>
+        <input type="text" id="f_docid" value="${doc ? escapeAttr(doc._id) : ''}" ${doc ? 'disabled' : ''} placeholder="e.g. eternity-of-crystal">
+        ${cfg.idHint ? `<div class="sub" style="margin-top:0.3rem; font-size:0.78rem;">${cfg.idHint}</div>` : ''}
+      </div>` : '';
+
+    formCard.innerHTML = `
+      <h3>${doc ? 'Edit entry' : 'Add new entry'}</h3>
+      <div class="form-error hidden" id="formError"></div>
+      <form id="entryForm">
+        <div class="form-grid">
+          ${idFieldHTML}
+          ${cfg.fields.map(f => fieldHTML(f, doc)).join('')}
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="saveBtn">${doc ? 'Save Changes' : 'Create'}</button>
+            <button type="button" class="btn" id="cancelBtn">Cancel</button>
+          </div>
+        </div>
+      </form>
+    `;
+
+    // Wire image upload previews/pickers
+    cfg.fields.filter(f => f.type === 'image').forEach(f => wireImageField(f, name, doc));
+    cfg.fields.filter(f => f.type === 'image-list').forEach(f => {
+      imageListState[f.key] = [];
+      wireImageListField(f, name, doc);
+      if (doc) loadImageListFromSubcollection(name, doc._id, f);
+    });
+    cfg.fields.filter(f => f.type === 'map-position').forEach(f => {
+      pendingMapPosition = {
+        x: doc && typeof doc.x === 'number' ? doc.x : 50,
+        y: doc && typeof doc.y === 'number' ? doc.y : 50
+      };
+      wireMapPositionField(f);
+    });
+
+    $('#cancelBtn').addEventListener('click', () => {
+      formCard.classList.add('hidden');
+      formCard.innerHTML = '';
+      editingId = null;
+      pendingNewId = null;
+    });
+
+    $('#entryForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      saveEntry(name, cfg, doc);
+    });
+
+    formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function escapeAttr(s = '') { return String(s).replace(/"/g, '&quot;'); }
+
+  function fieldHTML(f, doc) {
+    const val = doc ? doc[f.key] : undefined;
+    const full = f.full ? 'full' : '';
+    const id = 'f_' + f.key;
+
+    if (f.type === 'textarea') {
+      return `<div class="field ${full}"><label for="${id}">${f.label}</label><textarea id="${id}" data-key="${f.key}">${val !== undefined ? escapeHTML(val) : ''}</textarea></div>`;
+    }
+    if (f.type === 'select') {
+      return `<div class="field ${full}"><label for="${id}">${f.label}</label>
+        <select id="${id}" data-key="${f.key}">
+          ${f.options.map(o => `<option value="${o}" ${val === o ? 'selected' : ''}>${o}</option>`).join('')}
+        </select></div>`;
+    }
+    if (f.type === 'checkbox') {
+      return `<div class="field ${full}"><label>${f.label}</label>
+        <div class="checkbox-row"><input type="checkbox" id="${id}" data-key="${f.key}" ${val ? 'checked' : ''}> <span class="sub">Enabled</span></div></div>`;
+    }
+    if (f.type === 'list') {
+      const joined = Array.isArray(val) ? val.join(', ') : (val || '');
+      return `<div class="field ${full}"><label for="${id}">${f.label}</label><input type="text" id="${id}" data-key="${f.key}" data-list="true" value="${escapeAttr(joined)}"></div>`;
+    }
+    if (f.type === 'image') {
+      const current = val || '';
+      return `<div class="field ${full}">
+        <label for="${id}">${f.label}</label>
+        <div class="image-field">
+          <div class="image-upload-row">
+            <div class="image-preview" id="${id}_preview" style="${current ? `background-image:url('${escapeAttr(current)}')` : ''}">${current ? '' : 'No image'}</div>
+            <div style="flex:1;">
+              <input type="text" id="${id}" data-key="${f.key}" value="${escapeAttr(current)}" placeholder="Image URL, or upload a file below">
+              <input type="file" id="${id}_file" accept="image/*" style="margin-top:0.5rem;">
+              <div class="upload-progress" id="${id}_progress"></div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }
+    if (f.type === 'image-list') {
+      return `<div class="field ${full}">
+        <label for="${id}_files">${f.label}</label>
+        <div class="sub" style="font-size:0.78rem; margin-bottom:0.5rem;">Select multiple files at once, in the order they should appear (page 1 first) — they're compressed in your browser and stored directly in Firestore, no billing needed. Drag a page thumbnail to reorder it, or use ↑ / ↓. Or paste image URLs below instead, one per line, in reading order.</div>
+        <input type="file" id="${id}_files" accept="image/*" multiple>
+        <div class="upload-progress" id="${id}_progress"></div>
+
+        <div style="margin-top:0.8rem;">
+          <textarea id="${id}_urltext" placeholder="https://example.com/page-01.jpg&#10;https://example.com/page-02.jpg&#10;..."></textarea>
+          <button type="button" class="btn btn-sm" id="${id}_addurls" style="margin-top:0.5rem;">Add URLs to pages</button>
+        </div>
+
+        <div id="${id}_list" class="image-list-grid" style="margin-top:0.8rem;"></div>
+      </div>`;
+    }
+    if (f.type === 'map-position') {
+      return `<div class="field ${full}">
+        <label>${f.label}</label>
+        <div class="sub" style="font-size:0.78rem; margin-bottom:0.5rem;">Click anywhere on the map to place this location's marker.</div>
+        <div class="map-position-stage" id="${id}_stage">
+          <div class="map-position-marker" id="${id}_marker"></div>
+        </div>
+        <div class="sub" id="${id}_coords" style="margin-top:0.4rem; font-size:0.75rem;"></div>
+      </div>`;
+    }
+    const inputType = f.type === 'number' ? 'number' : 'text';
+    return `<div class="field ${full}"><label for="${id}">${f.label}</label><input type="${inputType}" id="${id}" data-key="${f.key}" value="${val !== undefined ? escapeAttr(val) : ''}" ${f.required ? 'required' : ''}></div>`;
+  }
+
+  async function wireMapPositionField(f) {
+    const id = 'f_' + f.key;
+    const stage = $('#' + id + '_stage');
+    const marker = $('#' + id + '_marker');
+    const coords = $('#' + id + '_coords');
+
+    function placeMarker() {
+      marker.style.left = pendingMapPosition.x + '%';
+      marker.style.top = pendingMapPosition.y + '%';
+      coords.textContent = `Position: ${pendingMapPosition.x.toFixed(1)}%, ${pendingMapPosition.y.toFixed(1)}%`;
+    }
+
+    const url = await fetchWorldMapImage();
+    if (url) {
+      stage.style.backgroundImage = `url('${url}')`;
+    } else {
+      stage.innerHTML = '<div class="map-position-empty">No world map uploaded yet — go to the top of this page to upload one, then come back to place this marker.</div>' + stage.innerHTML;
+    }
+    placeMarker();
+
+    stage.addEventListener('click', (e) => {
+      const rect = stage.getBoundingClientRect();
+      pendingMapPosition = {
+        x: Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)),
+        y: Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100))
+      };
+      placeMarker();
+    });
+  }
+
+
+  function wireImageField(f, collectionName, doc) {
+    const id = 'f_' + f.key;
+    const urlInput = $('#' + id);
+    const fileInput = $('#' + id + '_file');
+    const preview = $('#' + id + '_preview');
+    const progress = $('#' + id + '_progress');
+
+    urlInput.addEventListener('input', () => {
+      if (urlInput.value) {
+        preview.style.backgroundImage = `url('${urlInput.value}')`;
+        preview.textContent = '';
+      }
+    });
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      progress.textContent = 'Processing image…';
+      try {
+        const dataUrl = await fileToSafeDataURL(file);
+        urlInput.value = dataUrl;
+        preview.style.backgroundImage = `url('${dataUrl}')`;
+        preview.textContent = '';
+        progress.textContent = `Ready ✓ (~${Math.round(dataUrl.length / 1024)} KB)`;
+      } catch (err) {
+        progress.textContent = 'Could not process image: ' + (err.message || err);
+      }
+    });
+  }
+
+  async function loadImageListFromSubcollection(name, docId, f) {
+    const progress = $('#f_' + f.key + '_progress');
+    try {
+      const snap = await db.collection(name).doc(docId).collection(f.key).orderBy('order').get();
+      imageListState[f.key] = snap.docs.map(d => d.data().data);
+    } catch (err) {
+      if (progress) progress.textContent = 'Could not load existing pages: ' + (err.message || err);
+    }
+    if (imageListRenderers[f.key]) imageListRenderers[f.key]();
+  }
+
+  const imageListRenderers = {}; // { fieldKey: renderList() } — set by wireImageListField, called after async loads
+
+  function wireImageListField(f, collectionName, doc) {
+    const filesInput = $('#f_' + f.key + '_files');
+    const progress = $('#f_' + f.key + '_progress');
+    const listEl = $('#f_' + f.key + '_list');
+    const urlText = $('#f_' + f.key + '_urltext');
+    const addUrlsBtn = $('#f_' + f.key + '_addurls');
+
+    function renderList() {
+      const urls = imageListState[f.key];
+      if (!urls.length) {
+        listEl.innerHTML = `<p class="sub" style="font-size:0.8rem;">No pages yet.</p>`;
+        return;
+      }
+      listEl.innerHTML = urls.map((url, i) => `
+        <div class="image-list-item" draggable="true" data-idx="${i}">
+          <div class="image-list-thumb" style="background-image:url('${escapeAttr(url)}')"></div>
+          <div class="image-list-num">Page ${i + 1}</div>
+          <div class="image-list-actions">
+            <button type="button" class="btn btn-sm" data-move="up" data-idx="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button type="button" class="btn btn-sm" data-move="down" data-idx="${i}" ${i === urls.length - 1 ? 'disabled' : ''}>↓</button>
+            <button type="button" class="btn btn-sm btn-danger" data-remove-page="${i}">✕</button>
+          </div>
+        </div>
+      `).join('');
+
+      $$('[data-move]', listEl).forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = parseInt(btn.dataset.idx, 10);
+          const dir = btn.dataset.move === 'up' ? -1 : 1;
+          const arr = imageListState[f.key];
+          const j = i + dir;
+          if (j < 0 || j >= arr.length) return;
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+          renderList();
+        });
+      });
+      $$('[data-remove-page]', listEl).forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = parseInt(btn.dataset.removePage, 10);
+          imageListState[f.key].splice(i, 1);
+          renderList();
+        });
+      });
+
+      // Drag-and-drop reordering — drag a page thumbnail onto another to
+      // move it there. Falls back to the ↑ / ↓ buttons on touch devices
+      // where drag-and-drop between elements isn't well supported.
+      let dragFrom = null;
+      $$('.image-list-item', listEl).forEach(item => {
+        item.addEventListener('dragstart', () => {
+          dragFrom = parseInt(item.dataset.idx, 10);
+          item.classList.add('dragging');
+        });
+        item.addEventListener('dragend', () => {
+          item.classList.remove('dragging');
+        });
+        item.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          item.classList.add('drag-over');
+        });
+        item.addEventListener('dragleave', () => {
+          item.classList.remove('drag-over');
+        });
+        item.addEventListener('drop', (e) => {
+          e.preventDefault();
+          item.classList.remove('drag-over');
+          const dragTo = parseInt(item.dataset.idx, 10);
+          if (dragFrom === null || dragFrom === dragTo) return;
+          const arr = imageListState[f.key];
+          const [moved] = arr.splice(dragFrom, 1);
+          arr.splice(dragTo, 0, moved);
+          dragFrom = null;
+          renderList();
+        });
+      });
+    }
+
+    filesInput.addEventListener('change', async () => {
+      const files = Array.from(filesInput.files || []);
+      if (!files.length) return;
+      let done = 0;
+      progress.textContent = `Processing 0/${files.length}…`;
+      for (const file of files) {
+        try {
+          const dataUrl = await fileToSafeDataURL(file);
+          imageListState[f.key].push(dataUrl);
+          done++;
+          progress.textContent = `Processing ${done}/${files.length}…`;
+          renderList();
+        } catch (err) {
+          progress.textContent = `Could not process "${file.name}": ${err.message || err}`;
+          return;
         }
       }
+      progress.textContent = `Ready ✓ (${done}/${files.length} pages)`;
+      filesInput.value = '';
+    });
+
+    addUrlsBtn.addEventListener('click', () => {
+      const urls = urlText.value
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean);
+      if (!urls.length) return;
+      imageListState[f.key].push(...urls);
+      urlText.value = '';
+      renderList();
+      toast(`Added ${urls.length} page${urls.length > 1 ? 's' : ''}.`);
+    });
+
+    imageListRenderers[f.key] = renderList;
+
+    if (doc) {
+      listEl.innerHTML = `<p class="sub" style="font-size:0.8rem;">Loading pages…</p>`;
+    } else {
+      renderList();
     }
-    toast('Default content seeded');
-    loadTab(currentTab);
-  } catch (err) {
-    setStatus('Seeding failed: ' + (err?.message || err), 'error');
   }
-});
 
-/* =====================================================================
-   8. TOAST + UTIL
-   ===================================================================== */
-function toast(msg) {
-  const el = $('#toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.remove('show'), 2200);
-}
 
-function escapeHTML(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+  function collectFormData(cfg) {
+    const data = {};
+    let imageListCount = 0;
+    cfg.fields.forEach(f => {
+      if (f.type === 'image-list') {
+        // Not stored on the parent doc — synced to a subcollection instead
+        // (see syncImageListSubcollection) so a chapter with many/large
+        // pages can never exceed Firestore's 1MB-per-document limit.
+        imageListCount = imageListState[f.key].length;
+        return;
+      }
+      if (f.type === 'map-position') {
+        // Stored as flat x/y fields (what the public site's map expects),
+        // set by clicking on the map image rather than typing coordinates.
+        data.x = Math.round(pendingMapPosition.x * 10) / 10;
+        data.y = Math.round(pendingMapPosition.y * 10) / 10;
+        return;
+      }
+      const el = $('#f_' + f.key);
+      if (!el) return;
+      if (f.type === 'checkbox') {
+        data[f.key] = el.checked;
+      } else if (f.type === 'number') {
+        data[f.key] = el.value === '' ? 0 : Number(el.value);
+      } else if (f.type === 'list') {
+        data[f.key] = el.value.split(',').map(s => s.trim()).filter(Boolean);
+      } else {
+        data[f.key] = el.value;
+      }
+    });
+    // Keep the legacy "pages" count field in sync automatically when pages
+    // have been added, so the reader always shows the right number.
+    if (imageListCount) data.pages = imageListCount;
+    return data;
+  }
+
+  async function syncImageListSubcollection(name, docId, f, onProgress) {
+    const subRef = db.collection(name).doc(docId).collection(f.key);
+    const existing = await subRef.get();
+
+    // Firestore write requests have a payload size cap (a few MB), and a
+    // chapter's worth of compressed page images can easily exceed it if
+    // sent as one batch — so writes are chunked into small groups instead.
+    const CHUNK_SIZE = 6;
+
+    const deleteRefs = existing.docs.map(d => d.ref);
+    for (let i = 0; i < deleteRefs.length; i += CHUNK_SIZE) {
+      const batch = db.batch();
+      deleteRefs.slice(i, i + CHUNK_SIZE).forEach(ref => batch.delete(ref));
+      await batch.commit();
+    }
+
+    const urls = imageListState[f.key];
+    for (let i = 0; i < urls.length; i += CHUNK_SIZE) {
+      const batch = db.batch();
+      urls.slice(i, i + CHUNK_SIZE).forEach((url, j) => {
+        const idx = i + j;
+        batch.set(subRef.doc(String(idx).padStart(4, '0')), { order: idx, data: url });
+      });
+      await batch.commit();
+      if (onProgress) onProgress(Math.min(i + CHUNK_SIZE, urls.length), urls.length);
+    }
+  }
+
+  async function saveEntry(name, cfg, doc) {
+    const formError = $('#formError');
+    formError.classList.add('hidden');
+    const saveBtn = $('#saveBtn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    try {
+      const data = collectFormData(cfg);
+      const imageListFields = cfg.fields.filter(f => f.type === 'image-list');
+
+      let docId = doc ? doc._id : null;
+      if (cfg.idField) {
+        const idInput = $('#f_docid');
+        if (!doc) {
+          docId = idInput.value.trim();
+          if (!docId) throw new Error('Document ID is required.');
+          if (!/^[a-z0-9-]+$/i.test(docId)) throw new Error('Document ID may only contain letters, numbers and dashes.');
+          const existing = await db.collection(name).doc(docId).get();
+          if (existing.exists) throw new Error('That ID already exists — choose a different one.');
+        }
+      } else if (!doc && imageListFields.length) {
+        // Auto-id collection with image-list fields: use the id we
+        // pre-generated when the form opened, so subcollection writes and
+        // the parent doc share the same id.
+        docId = pendingNewId;
+      }
+
+      if (docId) {
+        await db.collection(name).doc(docId).set(data, { merge: true });
+      } else {
+        const ref = await db.collection(name).add(data);
+        docId = ref.id;
+      }
+
+      for (const f of imageListFields) {
+        saveBtn.textContent = 'Saving pages…';
+        await syncImageListSubcollection(name, docId, f, (done, total) => {
+          saveBtn.textContent = `Saving pages ${done}/${total}…`;
+        });
+      }
+
+      toast(doc ? 'Entry updated.' : 'Entry created.');
+      $('#formCard').classList.add('hidden');
+      $('#formCard').innerHTML = '';
+      editingId = null;
+      pendingNewId = null;
+      await refreshList(name);
+    } catch (err) {
+      formError.textContent = err.message || String(err);
+      formError.classList.remove('hidden');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = doc ? 'Save Changes' : 'Create';
+    }
+  }
+
+  async function deleteDoc(name, id) {
+    if (!confirm('Delete this entry? This cannot be undone.')) return;
+    try {
+      const cfg = COLLECTIONS[name];
+      const imageListFields = cfg.fields.filter(f => f.type === 'image-list');
+      for (const f of imageListFields) {
+        const subSnap = await db.collection(name).doc(id).collection(f.key).get();
+        if (!subSnap.empty) {
+          const batch = db.batch();
+          subSnap.docs.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+        }
+      }
+      await db.collection(name).doc(id).delete();
+      toast('Entry deleted.');
+      await refreshList(name);
+    } catch (err) {
+      toast('Delete failed: ' + (err.message || err), true);
+    }
+  }
+
+  /* =====================================================================
+     SEED DEFAULTS (only intended for first-time setup on an empty collection)
+  ===================================================================== */
+  async function seedDefaults(name) {
+    const items = DEFAULTS[name] || [];
+    if (!items.length) return toast('No starter content available for this section.', true);
+
+    const snap = await db.collection(name).get();
+    if (!snap.empty) {
+      if (!confirm(`"${COLLECTIONS[name].label}" already has entries. Import starter content anyway? This will add duplicates.`)) return;
+    }
+
+    try {
+      const batch = db.batch();
+      items.forEach(item => {
+        const { slug, ...rest } = item;
+        const ref = slug ? db.collection(name).doc(slug) : db.collection(name).doc();
+        batch.set(ref, rest, { merge: true });
+      });
+      await batch.commit();
+      toast('Starter content imported.');
+      await refreshList(name);
+    } catch (err) {
+      toast('Import failed: ' + (err.message || err), true);
+    }
+  }
+
+})();

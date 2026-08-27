@@ -133,8 +133,104 @@
       { tag: 'Character Reveal', date: 'Aug 12, 2026', title: 'Meet Ivo, the wanderer with no past', desc: 'Our fifth character profile is up — an elder whose knowledge of the crystals runs deeper than anyone expects.' },
       { tag: 'Artwork', date: 'Aug 3, 2026', title: 'New concept art: the Crystal Spire', desc: 'Early environment concept work for the tower at the center of it all, now in the Gallery.' },
       { tag: 'Development', date: 'Jul 22, 2026', title: 'Journey Begin platform enters open beta', desc: 'Search, bookmarks and the vertical reader are live across desktop and mobile.' }
-    ]
+    ],
+
+    worldMapImage: null // set via admin (World Locations → World Map Background); null = use the default generated art
   };
+
+  /* =====================================================================
+     0b. LIVE DATA — pulls content from Firestore (fed by the /admin panel)
+     Falls back silently to the hard-coded DATA above if Firebase isn't
+     configured, the collections are still empty, or the network request
+     fails for any reason — so the site always renders something.
+  ===================================================================== */
+  const DATA_CACHE_KEY = 'journeybegin_data_cache_v1';
+  const DATA_CACHE_KEYS = ['manga', 'chapters', 'characters', 'locations', 'lore', 'gallery', 'news'];
+  const DATA_CACHE_SCALAR_KEYS = ['worldMapImage'];
+
+  // Loads the last successfully-fetched live content (saved to this browser's
+  // session storage) so a page reload shows real content immediately instead
+  // of flashing the built-in placeholder content first, while the network
+  // fetch runs quietly in the background to catch anything that changed.
+  function loadCachedData() {
+    try {
+      const raw = sessionStorage.getItem(DATA_CACHE_KEY);
+      if (!raw) return;
+      const cached = JSON.parse(raw);
+      DATA_CACHE_KEYS.forEach(k => {
+        if (Array.isArray(cached[k]) && cached[k].length) DATA[k] = cached[k];
+      });
+      DATA_CACHE_SCALAR_KEYS.forEach(k => {
+        if (cached[k]) DATA[k] = cached[k];
+      });
+    } catch (e) { /* corrupt/unavailable cache — ignore, fallback DATA is used */ }
+  }
+
+  function saveCachedData() {
+    try {
+      const snapshot = {};
+      DATA_CACHE_KEYS.forEach(k => { snapshot[k] = DATA[k]; });
+      DATA_CACHE_SCALAR_KEYS.forEach(k => { snapshot[k] = DATA[k]; });
+      sessionStorage.setItem(DATA_CACHE_KEY, JSON.stringify(snapshot));
+    } catch (e) { /* storage full/unavailable — not critical, just skip caching */ }
+  }
+
+  async function loadRemoteData() {
+    const fb = window.jbFirebase;
+    if (!fb || !fb.db) return;
+
+    try {
+      const db = fb.db;
+      const [mangaSnap, chaptersSnap, charSnap, locSnap, loreSnap, gallerySnap, newsSnap, worldMapSnap] = await Promise.all([
+        db.collection('manga').get(),
+        db.collection('chapters').get(),
+        db.collection('characters').get(),
+        db.collection('locations').get(),
+        db.collection('lore').get(),
+        db.collection('gallery').get(),
+        db.collection('news').get(),
+        db.collection('settings').doc('worldMap').get()
+      ]);
+
+      if (!mangaSnap.empty) {
+        DATA.manga = mangaSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (!chaptersSnap.empty) {
+        // Only lightweight chapter metadata is fetched here — the actual
+        // page images are fetched on demand when a reader opens a chapter
+        // (see openReader), so page load isn't slowed down by downloading
+        // every chapter's pages up front.
+        DATA.chapters = chaptersSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (a.manga || '').localeCompare(b.manga || '') || (a.number || 0) - (b.number || 0));
+      }
+      if (!charSnap.empty) {
+        DATA.characters = charSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (!locSnap.empty) {
+        DATA.locations = locSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (!loreSnap.empty) {
+        DATA.lore = loreSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (!gallerySnap.empty) {
+        DATA.gallery = gallerySnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (!newsSnap.empty) {
+        DATA.news = newsSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => new Date(b.date) - new Date(a.date));
+      }
+
+      if (worldMapSnap.exists && worldMapSnap.data().image) {
+        DATA.worldMapImage = worldMapSnap.data().image;
+      }
+
+      saveCachedData();
+    } catch (err) {
+      console.warn('Journey Begin: could not load live content from Firebase, showing built-in defaults.', err);
+    }
+  }
 
   /* =====================================================================
      1. PLACEHOLDER ART GENERATOR
@@ -205,6 +301,7 @@
     },
     has(id) { return this.all().some(b => b.id === id); },
     toggle(item) {
+      if (!requireLogin('Sign in to save bookmarks.')) return this.all();
       let list = this.all();
       if (list.some(b => b.id === item.id)) {
         list = list.filter(b => b.id !== item.id);
@@ -347,6 +444,17 @@
   ===================================================================== */
   function renderMap() {
     const stage = $('#mapStage');
+    const art = $('.map-art', stage);
+    if (art) {
+      if (DATA.worldMapImage) {
+        art.style.backgroundImage = `url('${DATA.worldMapImage}')`;
+        art.style.backgroundSize = 'cover';
+        art.style.backgroundPosition = 'center';
+      } else {
+        art.style.backgroundImage = '';
+      }
+    }
+    $$('.map-marker', stage).forEach(el => el.remove());
     const markersHTML = DATA.locations.map(loc => `
       <button class="map-marker" style="left:${loc.x}%; top:${loc.y}%;" data-loc="${loc.id}" aria-label="${loc.name}">
         <span class="map-marker-label">${loc.name}</span>
@@ -558,7 +666,7 @@
     return DATA.chapters.filter(c => c.manga === mangaId).sort((a,b) => a.number - b.number);
   }
 
-  function openReader(mangaId, chapterNumber) {
+  async function openReader(mangaId, chapterNumber) {
     const manga = DATA.manga.find(m => m.id === mangaId);
     const chapters = getMangaChapters(mangaId);
     const chapter = chapters.find(c => c.number === chapterNumber);
@@ -573,14 +681,41 @@
     $('#readerChapterTitle').textContent = `Chapter ${chapter.number} — ${chapter.title}`;
 
     const pagesWrap = $('#readerPages');
+
+    // Fetch this chapter's actual page images only when it's opened, not
+    // ahead of time — keeps the rest of the site fast regardless of how
+    // many chapters/pages exist. Once fetched, cached on the chapter object
+    // so flipping back to it later in the same session is instant.
+    if (chapter.pageImages === undefined && window.jbFirebase && window.jbFirebase.db) {
+      pagesWrap.innerHTML = `<div class="reader-loading-page">Loading pages…</div>`;
+      try {
+        const snap = await window.jbFirebase.db
+          .collection('chapters').doc(chapter.id)
+          .collection('pageImages').orderBy('order').get();
+        chapter.pageImages = snap.empty ? null : snap.docs.map(p => p.data().data);
+      } catch (e) {
+        chapter.pageImages = null;
+      }
+      // Bail out if the reader was closed or navigated elsewhere while this
+      // chapter's pages were loading.
+      if (ReaderState.manga !== mangaId || ReaderState.chapter !== chapterNumber) return;
+    }
+
     pagesWrap.innerHTML = '';
-    const pageCount = chapter.pages || 5;
+
+    // Prefer explicit page images (from admin, fetched above). Fall back to
+    // the assets/ folder naming convention for chapters managed by hand.
+    const pageImages = Array.isArray(chapter.pageImages) && chapter.pageImages.length
+      ? chapter.pageImages
+      : null;
+    const pageCount = pageImages ? pageImages.length : (chapter.pages || 5);
+
     for (let p = 1; p <= pageCount; p++) {
       const num = String(p).padStart(2, '0');
-      const src = `assets/manga/${mangaId}/chapter-${chapter.number}/page-${num}.jpg`;
+      const src = pageImages ? pageImages[p - 1] : `assets/manga/${mangaId}/chapter-${chapter.number}/page-${num}.jpg`;
       const div = document.createElement('div');
       div.className = 'reader-page-wrap';
-      div.innerHTML = `<img data-page="${p}" src="${src}" alt="Page ${p}">`;
+      div.innerHTML = `<img data-page="${p}" src="${src}" alt="Page ${p}" loading="lazy">`;
       pagesWrap.appendChild(div);
       const img = $('img', div);
       img.addEventListener('error', () => {
@@ -589,8 +724,15 @@
       }, { once: true });
     }
 
-    updateReaderNavButtons(chapters, chapter);
+    // Comments live at the bottom of the scrollable page area, after the
+    // last page — same section reused/rebuilt each time a chapter opens.
+    const commentsDiv = document.createElement('div');
+    commentsDiv.className = 'reader-comments';
+    commentsDiv.id = 'readerComments';
+    pagesWrap.appendChild(commentsDiv);
+    renderChapterComments(chapter.id);
 
+    updateReaderNavButtons(chapters, chapter);
     const reader = $('#reader');
     reader.classList.add('open');
     reader.setAttribute('aria-hidden', 'false');
@@ -761,6 +903,440 @@
   }
 
   /* =====================================================================
+     13b. READER ACCOUNTS (Firebase Auth) & CHAPTER COMMENTS
+  ===================================================================== */
+  const Auth = {
+    user: null,       // Firebase Auth user object, or null when logged out
+    ready: false,     // becomes true once the first auth state is known
+    listeners: []
+  };
+
+  function onAuthChange(cb) {
+    Auth.listeners.push(cb);
+    if (Auth.ready) cb(Auth.user);
+  }
+
+  function initAuth() {
+    const fb = window.jbFirebase;
+    if (!fb || !fb.auth) return;
+    fb.auth.onAuthStateChanged((user) => {
+      Auth.user = user;
+      Auth.ready = true;
+      updateAccountUI(user);
+      Auth.listeners.forEach(cb => cb(user));
+    });
+  }
+
+  function updateAccountUI(user) {
+    const authView = $('#accountAuthView');
+    const profileView = $('#accountProfileView');
+    if (user) {
+      authView.classList.add('hidden');
+      profileView.classList.remove('hidden');
+      const name = user.displayName || user.email || 'Reader';
+      $('#accountName').textContent = name;
+      $('#accountEmail').textContent = user.email || '';
+      $('#accountAvatar').textContent = name.trim().charAt(0).toUpperCase() || '?';
+    } else {
+      authView.classList.remove('hidden');
+      profileView.classList.add('hidden');
+    }
+
+    // If a chapter is currently open in the reader, refresh its comments so
+    // the comment form / like buttons reflect the new login state right away.
+    if ($('#reader').classList.contains('open') && ReaderState.manga && ReaderState.chapter) {
+      const chapters = getMangaChapters(ReaderState.manga);
+      const chapter = chapters.find(c => c.number === ReaderState.chapter);
+      if (chapter) renderChapterComments(chapter.id);
+    }
+  }
+
+  function friendlyAuthError(err) {
+    const code = (err && err.code) || '';
+    if (code.includes('email-already-in-use')) return 'That email is already registered — try signing in instead.';
+    if (code.includes('weak-password')) return 'Password should be at least 6 characters.';
+    if (code.includes('user-not-found') || code.includes('wrong-password') || code.includes('invalid-credential')) return 'Incorrect email or password.';
+    if (code.includes('invalid-email')) return 'That email address looks invalid.';
+    if (code.includes('too-many-requests')) return 'Too many attempts. Please wait and try again.';
+    return 'Something went wrong. Please try again.';
+  }
+
+  function initAccountForms() {
+    const fb = window.jbFirebase;
+    initAuth();
+
+    $$('.account-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        $$('.account-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const which = tab.dataset.accountTab;
+        $('#accountLoginForm').classList.toggle('hidden', which !== 'login');
+        $('#accountRegisterForm').classList.toggle('hidden', which !== 'register');
+        $('#accountError').classList.add('hidden');
+      });
+    });
+
+    $('#accountLoginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = $('#accountError');
+      errEl.classList.add('hidden');
+      if (!fb || !fb.auth) return;
+      try {
+        await fb.auth.signInWithEmailAndPassword($('#acctLoginEmail').value.trim(), $('#acctLoginPassword').value);
+        $('#accountOverlay').classList.remove('open');
+        toast('Signed in.');
+      } catch (err) {
+        errEl.textContent = friendlyAuthError(err);
+        errEl.classList.remove('hidden');
+      }
+    });
+
+    $('#accountRegisterForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = $('#accountError');
+      errEl.classList.add('hidden');
+      if (!fb || !fb.auth) return;
+      const name = $('#acctRegName').value.trim();
+      const email = $('#acctRegEmail').value.trim();
+      const password = $('#acctRegPassword').value;
+      try {
+        const cred = await fb.auth.createUserWithEmailAndPassword(email, password);
+        await cred.user.updateProfile({ displayName: name });
+        await fb.db.collection('users').doc(cred.user.uid).set({ displayName: name, email }, { merge: true });
+        updateAccountUI(fb.auth.currentUser);
+        $('#accountOverlay').classList.remove('open');
+        toast('Account created — welcome!');
+      } catch (err) {
+        errEl.textContent = friendlyAuthError(err);
+        errEl.classList.remove('hidden');
+      }
+    });
+
+    $('#accountLogoutBtn').addEventListener('click', async () => {
+      if (!fb || !fb.auth) return;
+      await fb.auth.signOut();
+      toast('Signed out.');
+    });
+  }
+
+  function requireLogin(promptMessage) {
+    if (Auth.user) return true;
+    toast(promptMessage || 'Please sign in first.', true);
+    $('#accountOverlay').classList.add('open');
+    return false;
+  }
+
+  /* ---- Chapter comments (Instagram-style: single like, threaded replies,
+     collapsed-by-default extra replies, quick-emoji compose bar) ----
+     Comments for the open chapter are fetched once into CommentsState, then
+     every action (post/like/reply) patches just the affected DOM node
+     instead of re-rendering the whole list — this is what removes the
+     "whole section refreshes" flash on every click. ---- */
+  const QUICK_EMOJIS = ['❤️', '🙌', '🔥', '👏', '😢', '😍', '😮', '😂'];
+  const CommentsState = { chapterId: null, comments: [] };
+
+  function tsMillis(ts) { return ts && ts.toMillis ? ts.toMillis() : 0; }
+
+  function timeAgo(date) {
+    if (!date) return '';
+    const secs = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (secs < 60) return 'now';
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d`;
+    return date.toLocaleDateString();
+  }
+
+  function escapeHTMLComment(s = '') {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  async function fetchChapterComments(chapterId) {
+    const fb = window.jbFirebase;
+    if (!fb || !fb.db) return [];
+    try {
+      const snap = await fb.db.collection('comments').where('chapterId', '==', chapterId).get();
+      const comments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      await Promise.all(comments.map(async c => {
+        try {
+          const rSnap = await fb.db.collection('comments').doc(c.id).collection('replies').get();
+          c.replies = rSnap.docs.map(rd => ({ id: rd.id, ...rd.data() }));
+          c.replies.sort((a, b) => tsMillis(a.createdAt) - tsMillis(b.createdAt));
+        } catch (e) { c.replies = []; }
+      }));
+      comments.sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt));
+      return comments;
+    } catch (err) {
+      console.warn('Could not load comments', err);
+      return [];
+    }
+  }
+
+  function likeButtonHTML(item, user) {
+    const likedBy = Array.isArray(item.likedBy) ? item.likedBy : [];
+    const liked = user && likedBy.includes(user.uid);
+    return `<button type="button" class="ig-like-btn ${liked ? 'liked' : ''}" data-like="${item.id}">
+      <svg viewBox="0 0 24 24"><path d="M12 21s-7.2-4.5-9.6-9C.7 8.8 2 5 5.6 4.2c2-.4 3.9.5 5 2.1 1.1-1.6 3-2.5 5-2.1C19.2 5 20.5 8.8 18.8 12c-2.4 4.5-9.6 9-9.6 9z"/></svg>
+      <span class="ig-like-count">${likedBy.length || ''}</span>
+    </button>`;
+  }
+
+  function commentRowHTML(c, user, isReply) {
+    const when = c.createdAt && c.createdAt.toDate ? timeAgo(c.createdAt.toDate()) : 'now';
+    const initial = (c.authorName || '?').trim().charAt(0).toUpperCase();
+    return `
+      <div class="comment-row ${isReply ? 'is-reply' : ''}" data-comment="${c.id}">
+        <div class="comment-avatar">${initial}</div>
+        <div class="comment-body">
+          <div class="comment-line"><span class="comment-author">${escapeHTMLComment(c.authorName || 'Reader')}</span> <span class="comment-time">${when}</span></div>
+          <div class="comment-text">${escapeHTMLComment(c.text || '')}</div>
+          ${!isReply ? `<button type="button" class="comment-reply-toggle" data-reply-toggle="${c.id}">Reply</button>` : ''}
+        </div>
+        ${likeButtonHTML(c, user)}
+      </div>`;
+  }
+
+  function repliesBlockHTML(c, user) {
+    const replies = c.replies || [];
+    if (!replies.length) return `<div class="comment-replies" id="replies-${c.id}"></div>`;
+    const [first, ...rest] = replies;
+    const restHTML = rest.map(r => commentRowHTML(r, user, true)).join('');
+    return `
+      <div class="comment-replies" id="replies-${c.id}">
+        ${commentRowHTML(first, user, true)}
+        ${rest.length ? `
+          <button type="button" class="view-more-replies" data-view-more="${c.id}">
+            <span class="line"></span> View ${rest.length} more ${rest.length === 1 ? 'reply' : 'replies'}
+          </button>
+          <div class="more-replies hidden" id="more-replies-${c.id}">${restHTML}</div>
+        ` : ''}
+      </div>`;
+  }
+
+  function quickEmojiBarHTML(targetTextareaId) {
+    return `<div class="quick-emoji-bar" data-for="${targetTextareaId}">
+      ${QUICK_EMOJIS.map(e => `<button type="button" class="quick-emoji-btn" data-emoji="${e}">${e}</button>`).join('')}
+    </div>`;
+  }
+
+  function wireQuickEmojiBar(barEl) {
+    if (!barEl) return;
+    const targetId = barEl.dataset.for;
+    const textarea = document.getElementById(targetId);
+    if (!textarea) return;
+    $$('.quick-emoji-btn', barEl).forEach(btn => {
+      btn.addEventListener('click', () => {
+        textarea.value += btn.dataset.emoji;
+        textarea.focus();
+      });
+    });
+  }
+
+  function wireCommentRowInteractions(rowOrForm) {
+    // Like button
+    $$('[data-like]', rowOrForm).forEach(btn => {
+      btn.addEventListener('click', () => toggleLike(btn.dataset.like, btn));
+    });
+    // Reply toggle
+    $$('[data-reply-toggle]', rowOrForm).forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!requireLogin('Sign in to reply to comments.')) return;
+        showReplyForm(btn.dataset.replyToggle);
+      });
+    });
+    // View more replies
+    $$('[data-view-more]', rowOrForm).forEach(btn => {
+      btn.addEventListener('click', () => {
+        const commentId = btn.dataset.viewMore;
+        $('#more-replies-' + commentId).classList.remove('hidden');
+        btn.classList.add('hidden');
+      });
+    });
+  }
+
+  function findCommentAndRef(itemId) {
+    const fb = window.jbFirebase;
+    for (const c of CommentsState.comments) {
+      if (c.id === itemId) return { item: c, ref: fb.db.collection('comments').doc(c.id), parent: null };
+      const reply = (c.replies || []).find(r => r.id === itemId);
+      if (reply) return { item: reply, ref: fb.db.collection('comments').doc(c.id).collection('replies').doc(reply.id), parent: c };
+    }
+    return {};
+  }
+
+  async function toggleLike(itemId, btnEl) {
+    if (!requireLogin('Sign in to like comments.')) return;
+    const fb = window.jbFirebase;
+    const user = Auth.user;
+    const { item, ref } = findCommentAndRef(itemId);
+    if (!item || !ref) return;
+
+    const likedBy = Array.isArray(item.likedBy) ? item.likedBy : (item.likedBy = []);
+    const alreadyLiked = likedBy.includes(user.uid);
+
+    // Optimistic local update + instant DOM patch — no re-fetch, no flash.
+    if (alreadyLiked) {
+      item.likedBy = likedBy.filter(id => id !== user.uid);
+    } else {
+      item.likedBy = [...likedBy, user.uid];
+    }
+    btnEl.classList.toggle('liked', !alreadyLiked);
+    btnEl.querySelector('.ig-like-count').textContent = item.likedBy.length || '';
+
+    try {
+      await ref.update({
+        likedBy: alreadyLiked
+          ? fb.firebase.firestore.FieldValue.arrayRemove(user.uid)
+          : fb.firebase.firestore.FieldValue.arrayUnion(user.uid)
+      });
+    } catch (err) {
+      // Roll back on failure.
+      item.likedBy = likedBy;
+      btnEl.classList.toggle('liked', alreadyLiked);
+      btnEl.querySelector('.ig-like-count').textContent = likedBy.length || '';
+      toast('Could not update like: ' + (err.message || err), true);
+    }
+  }
+
+  function showReplyForm(commentId) {
+    const container = $('#replies-' + commentId);
+    if (!container || $('#replyForm-' + commentId)) return;
+    const user = Auth.user;
+    const formHTML = `
+      <form class="reply-form" id="replyForm-${commentId}" data-reply-form="${commentId}">
+        <textarea id="replyInput-${commentId}" maxlength="1000" placeholder="Write a reply..." required></textarea>
+        ${quickEmojiBarHTML('replyInput-' + commentId)}
+        <button type="submit">Reply</button>
+      </form>`;
+    container.insertAdjacentHTML('beforeend', formHTML);
+    const form = $('#replyForm-' + commentId);
+    wireQuickEmojiBar($('.quick-emoji-bar', form));
+    $('#replyInput-' + commentId).focus();
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const textarea = $('#replyInput-' + commentId);
+      const text = textarea.value.trim();
+      if (!text) return;
+      const fb = window.jbFirebase;
+      const btn = form.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      try {
+        const docRef = await fb.db.collection('comments').doc(commentId).collection('replies').add({
+          text,
+          uid: user.uid,
+          authorName: user.displayName || user.email || 'Reader',
+          createdAt: fb.firebase.firestore.FieldValue.serverTimestamp(),
+          likedBy: []
+        });
+        const comment = CommentsState.comments.find(c => c.id === commentId);
+        const newReply = { id: docRef.id, text, uid: user.uid, authorName: user.displayName || user.email || 'Reader', createdAt: { toDate: () => new Date() }, likedBy: [] };
+        if (comment) {
+          comment.replies = comment.replies || [];
+          comment.replies.push(newReply);
+        }
+        form.remove();
+        // Patch just this comment's replies block rather than the whole list.
+        const container2 = $('#replies-' + commentId);
+        if (container2 && comment) {
+          container2.outerHTML = repliesBlockHTML(comment, Auth.user);
+          wireCommentRowInteractions($('#replies-' + commentId));
+        }
+      } catch (err) {
+        toast('Could not post reply: ' + (err.message || err), true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  async function renderChapterComments(chapterId) {
+    const wrap = $('#readerComments');
+    if (!wrap) return;
+
+    const user = Auth.user;
+    const loginNoteHTML = user ? '' : `
+      <div class="comment-login-note">
+        <span>Sign in to join the conversation and like comments.</span>
+        <button type="button" id="commentLoginBtn">Sign In</button>
+      </div>`;
+    const formHTML = user ? `
+      <form class="comment-form" id="chapterCommentForm">
+        <textarea id="chapterCommentInput" maxlength="2000" placeholder="Share your thoughts on this chapter..." required></textarea>
+        ${quickEmojiBarHTML('chapterCommentInput')}
+        <button type="submit">Post Comment</button>
+      </form>` : '';
+
+    wrap.innerHTML = `
+      <h3>Comments</h3>
+      ${loginNoteHTML}
+      ${formHTML}
+      <div class="comment-list" id="chapterCommentList"><p class="comment-empty">Loading comments…</p></div>
+    `;
+
+    if (!user) {
+      $('#commentLoginBtn').addEventListener('click', () => $('#accountOverlay').classList.add('open'));
+    } else {
+      wireQuickEmojiBar($('.quick-emoji-bar', wrap));
+      $('#chapterCommentForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const input = $('#chapterCommentInput');
+        const text = input.value.trim();
+        if (!text) return;
+        const fb = window.jbFirebase;
+        const btn = e.target.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        try {
+          const docRef = await fb.db.collection('comments').add({
+            chapterId,
+            text,
+            uid: user.uid,
+            authorName: user.displayName || user.email || 'Reader',
+            createdAt: fb.firebase.firestore.FieldValue.serverTimestamp(),
+            likedBy: []
+          });
+          const newComment = { id: docRef.id, chapterId, text, uid: user.uid, authorName: user.displayName || user.email || 'Reader', createdAt: { toDate: () => new Date() }, likedBy: [], replies: [] };
+          CommentsState.comments.unshift(newComment);
+          input.value = '';
+
+          const listEl = $('#chapterCommentList');
+          if (listEl.querySelector('.comment-empty')) listEl.innerHTML = '';
+          const threadHTML = `<div class="comment-thread" data-thread="${newComment.id}">${commentRowHTML(newComment, user, false)}${repliesBlockHTML(newComment, user)}</div>`;
+          listEl.insertAdjacentHTML('afterbegin', threadHTML);
+          wireCommentRowInteractions(listEl.querySelector(`[data-thread="${newComment.id}"]`));
+        } catch (err) {
+          toast('Could not post comment: ' + (err.message || err), true);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+
+    const comments = await fetchChapterComments(chapterId);
+    CommentsState.chapterId = chapterId;
+    CommentsState.comments = comments;
+
+    const listEl = $('#chapterCommentList');
+    if (!listEl) return; // reader may have been closed while this was loading
+    if (!comments.length) {
+      listEl.innerHTML = `<p class="comment-empty">No comments yet — be the first to share your thoughts.</p>`;
+      return;
+    }
+
+    listEl.innerHTML = comments.map(c => `
+      <div class="comment-thread" data-thread="${c.id}">
+        ${commentRowHTML(c, user, false)}
+        ${repliesBlockHTML(c, user)}
+      </div>
+    `).join('');
+
+    wireCommentRowInteractions(listEl);
+  }
+
+  /* =====================================================================
      14. EVENT WIRING (search, bookmarks, reader controls, lightbox, modal)
   ===================================================================== */
   function initOverlaysAndControls() {
@@ -774,6 +1350,12 @@
     $('#bookmarkToggle').addEventListener('click', () => $('#bookmarkOverlay').classList.add('open'));
     $('#bookmarkClose').addEventListener('click', () => $('#bookmarkOverlay').classList.remove('open'));
     $('#bookmarkOverlay').addEventListener('click', (e) => { if (e.target.id === 'bookmarkOverlay') $('#bookmarkOverlay').classList.remove('open'); });
+
+    // account panel (reader sign in / register / profile)
+    $('#accountToggle').addEventListener('click', () => $('#accountOverlay').classList.add('open'));
+    $('#accountClose').addEventListener('click', () => $('#accountOverlay').classList.remove('open'));
+    $('#accountOverlay').addEventListener('click', (e) => { if (e.target.id === 'accountOverlay') $('#accountOverlay').classList.remove('open'); });
+    initAccountForms();
 
     // reader
     $('#readerClose').addEventListener('click', closeReader);
@@ -807,41 +1389,24 @@
       if ($('#charModalOverlay').classList.contains('open')) return closeCharacterModal();
       if ($('#searchOverlay').classList.contains('open')) return closeSearch();
       if ($('#bookmarkOverlay').classList.contains('open')) return $('#bookmarkOverlay').classList.remove('open');
+      if ($('#accountOverlay').classList.contains('open')) return $('#accountOverlay').classList.remove('open');
       if ($('#reader').classList.contains('open')) return closeReader();
       closeMobileMenu();
     });
   }
 
   /* =====================================================================
-     15. REMOTE DATA (Firestore, fed by data-loader.js / edited in /admin)
-     Falls back to the DATA object defined at the top of this file if
-     Firestore has no content yet or can't be reached.
+     15. INIT
   ===================================================================== */
-  function waitForRemoteData(timeoutMs = 4000) {
-    return new Promise((resolve) => {
-      if (window.__DATA_READY__) return resolve(window.__REMOTE_DATA__);
-      const timer = setTimeout(() => resolve(window.__REMOTE_DATA__ || null), timeoutMs);
-      window.addEventListener('jb:data-ready', () => {
-        clearTimeout(timer);
-        resolve(window.__REMOTE_DATA__);
-      }, { once: true });
-    });
-  }
+  document.addEventListener('DOMContentLoaded', () => {
+    // Upgrade the built-in placeholder content with whatever was last
+    // successfully fetched from Firestore this session, if anything —
+    // avoids the "old content flashes then swaps to live" effect on reload.
+    loadCachedData();
 
-  function mergeRemoteData(remote) {
-    if (!remote) return;
-    ['manga', 'chapters', 'characters', 'locations', 'lore', 'gallery', 'news'].forEach((key) => {
-      if (Array.isArray(remote[key]) && remote[key].length) DATA[key] = remote[key];
-    });
-  }
-
-  /* =====================================================================
-     16. INIT
-  ===================================================================== */
-  document.addEventListener('DOMContentLoaded', async () => {
-    const remote = await waitForRemoteData();
-    mergeRemoteData(remote);
-
+    // Render immediately (with cached-live or fallback content) so the page
+    // is never blank while waiting on the network — then swap in the latest
+    // content from Firestore the moment it arrives.
     renderMangaGrid();
     renderChapterList();
     renderMap();
@@ -858,6 +1423,17 @@
     initOverlaysAndControls();
     updateBookmarkCount();
     renderBookmarkPanel();
+
+    loadRemoteData().then(() => {
+      renderMangaGrid();
+      renderChapterList();
+      renderMap();
+      renderCharacters();
+      renderLore();
+      renderGallery();
+      renderNews();
+      SEARCH_INDEX = buildSearchIndex();
+    });
   });
 
 })();

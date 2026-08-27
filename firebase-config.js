@@ -1,17 +1,10 @@
 /* =====================================================================
    JOURNEY BEGIN — FIREBASE CONFIG
-   Single shared init used by the public site (data-loader.js) and the
-   admin panel (admin/admin.js). Loaded as an ES module, no build step
-   required — the browser fetches the Firebase SDK straight from Google's
-   CDN.
+   Shared by index.html (public site) and admin/index.html (admin panel).
+   Loaded AFTER the firebase-*-compat.js SDK scripts, BEFORE script.js
+   or admin.js.
    ===================================================================== */
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
-import { getAnalytics, isSupported as analyticsSupported } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-analytics.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-
-// Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyASYIdYTGDReWGyblztBKI3uliL5ax-RQs",
   authDomain: "explore-tales.firebaseapp.com",
@@ -22,10 +15,28 @@ const firebaseConfig = {
   measurementId: "G-DWLQS3TQ3L"
 };
 
-export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-export const auth = getAuth(app);
+// Guard against double-initialization if this file is ever included twice.
+if (typeof firebase !== 'undefined' && (!firebase.apps || !firebase.apps.length)) {
+  firebase.initializeApp(firebaseConfig);
+}
 
-// Analytics only works over https (not file://) and isn't supported in
-// every environment, so guard it instead of letting it throw.
-analyticsSupported().then((ok) => { if (ok) getAnalytics(app); }).catch(() => {});
+// Expose everything the site/admin needs under one namespace so plain
+// <script> files (script.js / admin.js) — which are NOT ES modules —
+// can use Firebase without any bundler.
+if (typeof firebase !== 'undefined') {
+  window.jbFirebase = {
+    firebase,
+    auth: firebase.auth(),
+    db: firebase.firestore()
+    // Storage is intentionally not initialized — all images are stored
+    // directly in Firestore as compressed data URLs (see admin/admin.js),
+    // so the site works fully on Firebase's free Spark plan.
+  };
+
+  // Analytics only works over https/http (not file://), so guard it.
+  try {
+    if (firebase.analytics && location.protocol.startsWith('http')) {
+      firebase.analytics();
+    }
+  } catch (e) { /* analytics is optional — ignore failures */ }
+}
