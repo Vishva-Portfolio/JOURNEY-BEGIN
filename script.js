@@ -175,21 +175,19 @@
     } catch (e) { /* storage full/unavailable — not critical, just skip caching */ }
   }
 
+  // Fast path — text-only or already-lazy collections, fetched immediately
+  // so the top of the page (manga grid) is live as fast as possible.
   async function loadRemoteData() {
     const fb = window.jbFirebase;
     if (!fb || !fb.db) return;
 
     try {
       const db = fb.db;
-      const [mangaSnap, chaptersSnap, charSnap, locSnap, loreSnap, gallerySnap, newsSnap, worldMapSnap] = await Promise.all([
+      const [mangaSnap, chaptersSnap, loreSnap, newsSnap] = await Promise.all([
         db.collection('manga').get(),
         db.collection('chapters').get(),
-        db.collection('characters').get(),
-        db.collection('locations').get(),
         db.collection('lore').get(),
-        db.collection('gallery').get(),
-        db.collection('news').get(),
-        db.collection('settings').doc('worldMap').get()
+        db.collection('news').get()
       ]);
 
       if (!mangaSnap.empty) {
@@ -204,17 +202,8 @@
           .map(d => ({ id: d.id, ...d.data() }))
           .sort((a, b) => (a.manga || '').localeCompare(b.manga || '') || (a.number || 0) - (b.number || 0));
       }
-      if (!charSnap.empty) {
-        DATA.characters = charSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      }
-      if (!locSnap.empty) {
-        DATA.locations = locSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      }
       if (!loreSnap.empty) {
         DATA.lore = loreSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      }
-      if (!gallerySnap.empty) {
-        DATA.gallery = gallerySnap.docs.map(d => ({ id: d.id, ...d.data() }));
       }
       if (!newsSnap.empty) {
         DATA.news = newsSnap.docs
@@ -222,14 +211,95 @@
           .sort((a, b) => new Date(b.date) - new Date(a.date));
       }
 
-      if (worldMapSnap.exists && worldMapSnap.data().image) {
-        DATA.worldMapImage = worldMapSnap.data().image;
-      }
-
       saveCachedData();
     } catch (err) {
       console.warn('Journey Begin: could not load live content from Firebase, showing built-in defaults.', err);
     }
+  }
+
+  // Slow path — collections that carry compressed images (portraits, gallery
+  // photos, the world map background). These are only fetched once their
+  // section actually scrolls near the viewport (see initLazySections), so a
+  // visit that never scrolls to Characters/World/Gallery never downloads
+  // their images at all, and the manga grid up top is never held up by them.
+  async function loadCharactersSection() {
+    const fb = window.jbFirebase;
+    if (!fb || !fb.db) return;
+    try {
+      const snap = await fb.db.collection('characters').get();
+      if (!snap.empty) {
+        DATA.characters = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderCharacters();
+        saveCachedData();
+        SEARCH_INDEX = buildSearchIndex();
+      }
+    } catch (err) {
+      console.warn('Journey Begin: could not load characters.', err);
+    }
+  }
+
+  async function loadWorldSection() {
+    const fb = window.jbFirebase;
+    if (!fb || !fb.db) return;
+    try {
+      const [locSnap, worldMapSnap] = await Promise.all([
+        fb.db.collection('locations').get(),
+        fb.db.collection('settings').doc('worldMap').get()
+      ]);
+      if (!locSnap.empty) {
+        DATA.locations = locSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      if (worldMapSnap.exists && worldMapSnap.data().image) {
+        DATA.worldMapImage = worldMapSnap.data().image;
+      }
+      renderMap();
+      saveCachedData();
+      SEARCH_INDEX = buildSearchIndex();
+    } catch (err) {
+      console.warn('Journey Begin: could not load world map/locations.', err);
+    }
+  }
+
+  async function loadGallerySection() {
+    const fb = window.jbFirebase;
+    if (!fb || !fb.db) return;
+    try {
+      const snap = await fb.db.collection('gallery').get();
+      if (!snap.empty) {
+        DATA.gallery = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderGallery();
+        saveCachedData();
+        SEARCH_INDEX = buildSearchIndex();
+      }
+    } catch (err) {
+      console.warn('Journey Begin: could not load gallery.', err);
+    }
+  }
+
+  // Kicks off each lazy section's fetch the moment it scrolls near the
+  // viewport (600px early, so it's ready by the time it's actually visible)
+  // rather than on first paint — this is what keeps the initial page load
+  // light regardless of how many character portraits/gallery images exist.
+  function initLazySections() {
+    const targets = [
+      { id: 'characters', loader: loadCharactersSection },
+      { id: 'world', loader: loadWorldSection },
+      { id: 'gallery', loader: loadGallerySection }
+    ];
+    targets.forEach(({ id, loader }) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (!('IntersectionObserver' in window)) { loader(); return; }
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            observer.unobserve(el);
+            loader();
+          }
+        });
+      }, { rootMargin: '600px 0px' });
+      observer.observe(el);
+    });
   }
 
   /* =====================================================================
@@ -1423,14 +1493,12 @@
     initOverlaysAndControls();
     updateBookmarkCount();
     renderBookmarkPanel();
+    initLazySections();
 
     loadRemoteData().then(() => {
       renderMangaGrid();
       renderChapterList();
-      renderMap();
-      renderCharacters();
       renderLore();
-      renderGallery();
       renderNews();
       SEARCH_INDEX = buildSearchIndex();
     });
