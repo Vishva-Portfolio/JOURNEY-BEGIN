@@ -71,6 +71,7 @@
       <a href="#characters" class="nav-link" data-nav-link>Characters</a>
       <a href="#world" class="nav-link" data-nav-link>Worlds</a>
       <a href="#news" class="nav-link" data-nav-link>News</a>
+      <a href="#reviews" class="nav-link" data-nav-link>Reviews</a>
     </nav>
 
     <div class="nav-actions">
@@ -81,8 +82,9 @@
         <svg viewBox="0 0 24 24"><path d="M6 2h12a1 1 0 011 1v18l-7-4.2L5 21V3a1 1 0 011-1z"/></svg>
         <span class="badge" id="bookmarkCount">0</span>
       </button>
-      <button class="icon-btn" id="accountToggle" aria-label="Account" title="Account">
-        <svg viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v2h16v-2c0-2.8-3.6-5-8-5z"/></svg>
+      <button class="icon-btn account-btn" id="accountToggle" aria-label="Account" title="Account">
+        <svg class="account-icon-default" id="accountIconDefault" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v2h16v-2c0-2.8-3.6-5-8-5z"/></svg>
+        <span class="nav-avatar hidden" id="navAvatar"></span>
       </button>
       <button class="hamburger" id="hamburgerBtn" aria-label="Menu" aria-expanded="false">
         <span></span><span></span><span></span>
@@ -204,7 +206,22 @@
         <div class="account-avatar" id="accountAvatar">?</div>
         <label class="avatar-change-btn" for="acctProfileAvatarInput">Change Photo</label>
         <input type="file" id="acctProfileAvatarInput" accept="image/*" hidden>
-        <div class="account-name" id="accountName">—</div>
+
+        <div class="account-name-row" id="accountNameRow">
+          <div class="account-name" id="accountName">—</div>
+          <button type="button" class="account-edit-name-btn" id="accountEditNameBtn" aria-label="Edit name" title="Edit name">
+            <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          </button>
+        </div>
+        <form id="accountEditNameForm" class="account-name-form hidden">
+          <div class="account-error hidden" id="accountNameError"></div>
+          <input type="text" id="acctEditName" maxlength="40" required placeholder="Display name" autocomplete="name">
+          <div class="account-name-form-actions">
+            <button type="button" id="accountEditNameCancel">Cancel</button>
+            <button type="submit" class="acct-btn-primary">Save</button>
+          </div>
+        </form>
+
         <div class="account-email" id="accountEmail">—</div>
       </div>
 
@@ -384,6 +401,29 @@
     </div>
   </section>
 
+  <!-- ============================================================
+       REVIEWS (site-wide reader ratings for Journey Begin's manga —
+       only a signed-in reader may post/edit their own review)
+  ============================================================= -->
+  <section class="section section-alt" id="reviews">
+    <div class="section-inner">
+      <header class="section-head reveal-up">
+        <p class="section-eyebrow">Reader Verdict</p>
+        <h2 class="section-title">Reviews &amp; Ratings</h2>
+        <p class="section-desc">What readers think of Journey Begin's manga, overall. Sign in to leave your own rating.</p>
+      </header>
+
+      <div class="reviews-summary" id="reviewsSummary">
+        <div class="reviews-summary-score">—</div>
+        <div class="reviews-summary-meta">
+          <span class="reviews-summary-count">Loading ratings…</span>
+        </div>
+      </div>
+      <div class="review-form-wrap" id="reviewFormWrap"><!-- injected by script.js --></div>
+      <div class="review-list" id="reviewsList"><p class="review-empty">Loading reviews…</p></div>
+    </div>
+  </section>
+
 </main>
 
 <!-- ============================================================
@@ -404,6 +444,7 @@
       <a href="#characters" data-nav-link>Characters</a>
       <a href="#world" data-nav-link>Worlds</a>
       <a href="#news" data-nav-link>News</a>
+      <a href="#reviews" data-nav-link>Reviews</a>
     </nav>
 
     <div class="footer-copy">
@@ -417,6 +458,7 @@
      MANGA READER (overlay, full screen)
 ============================================================= -->
 <div class="reader" id="reader" aria-hidden="true">
+  <div class="reader-progress-bar" id="readerProgressBar"></div>
   <div class="reader-topbar">
     <button class="reader-btn" id="readerClose" title="Close reader">
       <svg viewBox="0 0 24 24"><path d="M6.4 4.98L12 10.59l5.6-5.6 1.4 1.4-5.6 5.6 5.6 5.6-1.4 1.4-5.6-5.6-5.6 5.6-1.4-1.4 5.6-5.6-5.6-5.6z"/></svg>
@@ -430,12 +472,21 @@
       <span class="reader-zoom-level" id="zoomLevel">100%</span>
       <button class="reader-btn" id="zoomIn" title="Zoom in">+</button>
       <button class="reader-btn" id="fullscreenBtn" title="Fullscreen">
-        <svg viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm16 0h-2v4h-4v2h6v-6z"/></svg>
+        <svg class="icon-expand" viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm16 0h-2v4h-4v2h6v-6z"/></svg>
+        <svg class="icon-compress" viewBox="0 0 24 24"><path d="M9 4h2v6H5V8h4V4zm6 0h2v4h4v2h-6V4zM5 16h6v6H9v-4H5v-2zm10 0h6v2h-4v4h-2v-6z"/></svg>
       </button>
     </div>
   </div>
 
   <div class="reader-pages" id="readerPages"><!-- pages injected by script.js --></div>
+
+  <button class="reader-immersive-exit" id="readerImmersiveExit" title="Show reader controls" aria-label="Show reader controls">
+    <svg viewBox="0 0 24 24"><path d="M6.4 4.98L12 10.59l5.6-5.6 1.4 1.4-5.6 5.6 5.6 5.6-1.4 1.4-5.6-5.6-5.6 5.6-1.4-1.4 5.6-5.6-5.6-5.6z"/></svg>
+  </button>
+
+  <button class="reader-scrolltop" id="readerScrollTop" title="Back to top" aria-label="Back to top">
+    <svg viewBox="0 0 24 24"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg>
+  </button>
 
   <div class="reader-bottombar">
     <button class="reader-nav-btn" id="prevChapter">← Previous Chapter</button>

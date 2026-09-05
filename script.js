@@ -263,7 +263,8 @@
     const targets = [
       { id: 'characters', loader: loadCharactersSection },
       { id: 'world', loader: loadWorldSection },
-      { id: 'gallery', loader: loadGallerySection }
+      { id: 'gallery', loader: loadGallerySection },
+      { id: 'reviews', loader: loadReviewsSection }
     ];
     targets.forEach(({ id, loader }) => {
       const el = document.getElementById(id);
@@ -754,7 +755,7 @@
       const src = pageImages ? pageImages[p - 1] : `assets/manga/${mangaId}/chapter-${chapter.number}/page-${num}.jpg`;
       const div = document.createElement('div');
       div.className = 'reader-page-wrap';
-      div.innerHTML = `<img data-page="${p}" src="${src}" alt="Page ${p}" loading="lazy">`;
+      div.innerHTML = `<img data-page="${p}" src="${src}" alt="Page ${p}" loading="lazy"><span class="page-number-tag">${p} / ${pageCount}</span>`;
       pagesWrap.appendChild(div);
       const img = $('img', div);
       img.addEventListener('error', () => {
@@ -785,7 +786,81 @@
     reader.classList.remove('open');
     reader.setAttribute('aria-hidden', 'true');
     document.body.style.overflow = '';
-    if (document.fullscreenElement) document.exitFullscreen?.();
+    exitReaderFullscreen();
+  }
+
+  /* ---------------------------------------------------------------------
+     Fullscreen — with a working fallback for browsers (most notably iOS
+     Safari) that don't support the element Fullscreen API at all. Rather
+     than the button silently doing nothing there, it drops into an
+     "immersive" CSS mode that hides the reader's top/bottom bars so pages
+     fill the whole screen, with a small floating control to bring the
+     bars back.
+  --------------------------------------------------------------------- */
+  function getFullscreenEl() {
+    return document.fullscreenElement || document.webkitFullscreenElement ||
+      document.webkitCurrentFullScreenElement || document.mozFullScreenElement ||
+      document.msFullscreenElement || null;
+  }
+  function requestFsOn(el) {
+    const fn = el.requestFullscreen || el.webkitRequestFullscreen ||
+      el.webkitRequestFullScreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+    if (!fn) return Promise.reject(new Error('Fullscreen API unsupported'));
+    const result = fn.call(el);
+    return result instanceof Promise ? result : Promise.resolve();
+  }
+  function exitFsApi() {
+    const fn = document.exitFullscreen || document.webkitExitFullscreen ||
+      document.webkitCancelFullScreen || document.mozCancelFullScreen || document.msExitFullscreen;
+    if (!fn) return Promise.reject(new Error('Fullscreen API unsupported'));
+    const result = fn.call(document);
+    return result instanceof Promise ? result : Promise.resolve();
+  }
+
+  function setFullscreenBtnState(active) {
+    $('#fullscreenBtn')?.classList.toggle('is-active', active);
+    const btn = $('#fullscreenBtn');
+    if (btn) btn.title = active ? 'Exit fullscreen' : 'Fullscreen';
+  }
+
+  function exitReaderFullscreen() {
+    const reader = $('#reader');
+    reader.classList.remove('immersive');
+    if (getFullscreenEl()) exitFsApi().catch(() => {});
+    setFullscreenBtnState(false);
+  }
+
+  function initReaderFullscreen() {
+    const reader = $('#reader');
+    const btn = $('#fullscreenBtn');
+    if (!btn || !reader) return;
+
+    btn.addEventListener('click', () => {
+      // Already in some fullscreen state → exit, regardless of which
+      // mode (native or immersive fallback) is active.
+      if (getFullscreenEl() || reader.classList.contains('immersive')) {
+        exitReaderFullscreen();
+        return;
+      }
+      requestFsOn(reader)
+        .then(() => setFullscreenBtnState(true))
+        .catch(() => {
+          // Native API missing or the browser refused it (iOS Safari
+          // always ends up here) — fall back to the CSS immersive mode,
+          // which works everywhere.
+          reader.classList.add('immersive');
+          setFullscreenBtnState(true);
+        });
+    });
+
+    $('#readerImmersiveExit')?.addEventListener('click', exitReaderFullscreen);
+
+    ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange']
+      .forEach(evt => document.addEventListener(evt, () => {
+        const isFs = !!getFullscreenEl();
+        if (!isFs) reader.classList.remove('immersive');
+        setFullscreenBtnState(isFs || reader.classList.contains('immersive'));
+      }));
   }
 
   function updateReaderNavButtons(chapters, current) {
@@ -811,6 +886,18 @@
     let current = 1;
     wraps.forEach((w, i) => { if (w.offsetTop <= scrollMid) current = i + 1; });
     $('#readerProgress').textContent = `Page ${current} / ${wraps.length}`;
+
+    // Thin bar across the top of the reader, tracking how far through the
+    // chapter's scrollable content the reader has gotten.
+    const scrollable = pagesWrap.scrollHeight - pagesWrap.clientHeight;
+    const pct = scrollable > 0 ? Math.min(100, (pagesWrap.scrollTop / scrollable) * 100) : 0;
+    const bar = $('#readerProgressBar');
+    if (bar) bar.style.width = pct + '%';
+
+    // Floating "back to top" button appears once the reader has scrolled
+    // a little way into the chapter.
+    const scrollTopBtn = $('#readerScrollTop');
+    if (scrollTopBtn) scrollTopBtn.classList.toggle('show', pagesWrap.scrollTop > 400);
   }
 
   /* =====================================================================
@@ -881,7 +968,7 @@
   function initNav() {
     const nav = $('#siteNav');
     const navLinks = $$('.nav-link');
-    const sections = ['home','manga','discover','world','characters','news'].map(id => document.getElementById(id)).filter(Boolean);
+    const sections = ['home','manga','discover','world','characters','news','reviews'].map(id => document.getElementById(id)).filter(Boolean);
 
     window.addEventListener('scroll', () => {
       nav.classList.toggle('scrolled', window.scrollY > 40);
@@ -1056,6 +1143,8 @@
   function updateAccountUI(user) {
     const authView = $('#accountAuthView');
     const profileView = $('#accountProfileView');
+    const accountBtn = $('#accountToggle');
+    const navAvatar = $('#navAvatar');
     if (user) {
       authView.classList.add('hidden');
       profileView.classList.remove('hidden');
@@ -1063,13 +1152,36 @@
       $('#accountName').textContent = name;
       $('#accountEmail').textContent = user.email || '';
       $('#accountAvatar').innerHTML = avatarInnerHTML(name, Auth.photoData);
-      // Collapse the change-password form back to its resting state on
-      // every auth refresh (e.g. after signing in as someone else).
+      // Header account button: show the reader's own profile picture (or
+      // initial) in a circle instead of the generic person icon.
+      if (accountBtn && navAvatar) {
+        navAvatar.innerHTML = avatarInnerHTML(name, Auth.photoData);
+        navAvatar.classList.remove('hidden');
+        accountBtn.classList.add('logged-in');
+      }
+      // Collapse the change-password and edit-name forms back to their
+      // resting state on every auth refresh (e.g. after signing in as
+      // someone else).
       $('#accountChangePasswordForm').classList.add('hidden');
       $('#accountPasswordToggle').classList.remove('revealed');
+      $('#accountEditNameForm').classList.add('hidden');
+      $('#accountNameRow').classList.remove('hidden');
     } else {
       authView.classList.remove('hidden');
       profileView.classList.add('hidden');
+      if (accountBtn && navAvatar) {
+        navAvatar.classList.add('hidden');
+        navAvatar.innerHTML = '';
+        accountBtn.classList.remove('logged-in');
+      }
+    }
+
+    // Refresh the reviews section (sign-in note vs. form, "You" tag, own
+    // edit/delete controls) if it has already loaded, so login state
+    // changes are reflected immediately without waiting on a reload.
+    if (ReviewsState.loaded) {
+      renderReviewForm();
+      renderReviewsList();
     }
 
     // If a chapter is currently open in the reader, refresh its comments so
@@ -1199,6 +1311,7 @@
         await saveUserPhoto(Auth.user.uid, dataUrl);
         Auth.photoData = dataUrl;
         $('#accountAvatar').innerHTML = avatarInnerHTML(Auth.user.displayName || Auth.user.email, dataUrl);
+        $('#navAvatar').innerHTML = avatarInnerHTML(Auth.user.displayName || Auth.user.email, dataUrl);
         toast('Profile picture updated.');
         if ($('#reader').classList.contains('open') && ReaderState.manga && ReaderState.chapter) {
           const chapters = getMangaChapters(ReaderState.manga);
@@ -1207,6 +1320,58 @@
         }
       } catch (err) {
         toast('Could not update profile picture: ' + (err.message || err), true);
+      }
+    });
+
+    // Edit display name from the logged-in profile view: swaps the name
+    // for an inline text field + Save/Cancel, updates the Firebase Auth
+    // profile and the mirrored users/{uid} doc, then refreshes every place
+    // the name is shown live (header avatar, profile, open comments/reviews).
+    // Names already attached to past comments/reviews are left as-is —
+    // only new activity uses the updated name, same as the site's existing
+    // profile-photo behaviour.
+    $('#accountEditNameBtn').addEventListener('click', () => {
+      if (!Auth.user) return;
+      $('#acctEditName').value = Auth.user.displayName || '';
+      $('#accountNameError').classList.add('hidden');
+      $('#accountNameRow').classList.add('hidden');
+      $('#accountEditNameForm').classList.remove('hidden');
+      $('#acctEditName').focus();
+    });
+    $('#accountEditNameCancel').addEventListener('click', () => {
+      $('#accountEditNameForm').classList.add('hidden');
+      $('#accountNameRow').classList.remove('hidden');
+    });
+    $('#accountEditNameForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = $('#accountNameError');
+      errEl.classList.add('hidden');
+      const user = Auth.user;
+      if (!user) return;
+      const newName = $('#acctEditName').value.trim();
+      if (!newName) return;
+      const btn = e.target.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      try {
+        await user.updateProfile({ displayName: newName });
+        if (fb && fb.db) await fb.db.collection('users').doc(user.uid).set({ displayName: newName }, { merge: true });
+        $('#accountName').textContent = newName;
+        $('#accountAvatar').innerHTML = avatarInnerHTML(newName, Auth.photoData);
+        $('#navAvatar').innerHTML = avatarInnerHTML(newName, Auth.photoData);
+        $('#accountEditNameForm').classList.add('hidden');
+        $('#accountNameRow').classList.remove('hidden');
+        toast('Name updated.');
+        if ($('#reader').classList.contains('open') && ReaderState.manga && ReaderState.chapter) {
+          const chapters = getMangaChapters(ReaderState.manga);
+          const chapter = chapters.find(c => c.number === ReaderState.chapter);
+          if (chapter) renderChapterComments(chapter.id);
+        }
+        if (ReviewsState.loaded) renderReviewForm();
+      } catch (err) {
+        errEl.textContent = friendlyAuthError(err);
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
       }
     });
 
@@ -1744,6 +1909,212 @@
     wireCommentRowInteractions(listEl);
   }
 
+  /* ---- Reviews & Ratings (site-wide overall-manga reviews — read by
+     everyone, but only a signed-in reader may post one, and only ever
+     their own single review, which they can update or delete later) ---- */
+  const ReviewsState = { reviews: [], loaded: false };
+  let reviewFormRating = 0;
+
+  // A single 5-point star, filled or outlined — shared by the summary
+  // score, the interactive picker in the form, and every review row.
+  function starSVG(filled) {
+    return `<svg class="star-icon ${filled ? 'filled' : ''}" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.6 7.2.6-5.5 4.7 1.7 7-6.3-3.8-6.3 3.8 1.7-7-5.5-4.7 7.2-.6L12 2.5z"/></svg>`;
+  }
+
+  function starsHTML(rating, cls) {
+    let html = '';
+    for (let i = 1; i <= 5; i++) html += starSVG(i <= Math.round(rating));
+    return `<span class="${cls}">${html}</span>`;
+  }
+
+  async function fetchReviews() {
+    const fb = window.jbFirebase;
+    if (!fb || !fb.db) return [];
+    try {
+      const snap = await fb.db.collection('reviews').get();
+      const reviews = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      reviews.sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt));
+      await preloadAuthorPhotos(reviews); // reuses the comments photo cache — reviews carry the same uid/authorName shape
+      return reviews;
+    } catch (err) {
+      console.warn('Could not load reviews', err);
+      return [];
+    }
+  }
+
+  function renderReviewsSummary() {
+    const el = $('#reviewsSummary');
+    if (!el) return;
+    const reviews = ReviewsState.reviews;
+    if (!reviews.length) {
+      el.innerHTML = `
+        <div class="reviews-summary-score">—</div>
+        <div class="reviews-summary-meta">
+          ${starsHTML(0, 'reviews-summary-stars')}
+          <span class="reviews-summary-count">No ratings yet</span>
+        </div>`;
+      return;
+    }
+    const avg = reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length;
+    el.innerHTML = `
+      <div class="reviews-summary-score">${avg.toFixed(1)}</div>
+      <div class="reviews-summary-meta">
+        ${starsHTML(avg, 'reviews-summary-stars')}
+        <span class="reviews-summary-count">${reviews.length} rating${reviews.length === 1 ? '' : 's'}</span>
+      </div>`;
+  }
+
+  // Formats a Date as "5 Sep 2026" — day, month and year, as requested,
+  // rather than the relative "2h/3d" style used for chapter comments.
+  function formatReviewDate(date) {
+    if (!date) return '';
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function reviewRowHTML(r, user) {
+    const when = r.createdAt && r.createdAt.toDate ? formatReviewDate(r.createdAt.toDate()) : formatReviewDate(new Date());
+    const photo = r.uid ? AvatarPhotoCache.get(r.uid) : null;
+    const isOwn = !!(user && r.uid === user.uid);
+    return `
+      <div class="review-row" data-review="${r.id}">
+        <div class="review-row-head">
+          <div class="review-avatar">${avatarInnerHTML(r.authorName, photo)}</div>
+          <div class="review-meta">
+            <div class="review-author-line">
+              <span class="review-author">${escapeHTMLComment(r.authorName || 'Reader')}</span>
+              ${isOwn ? '<span class="review-own-tag">You</span>' : ''}
+            </div>
+            ${starsHTML(r.rating || 0, 'review-stars')}
+          </div>
+        </div>
+        ${r.text ? `<div class="review-text">${escapeHTMLComment(r.text)}</div>` : ''}
+        <div class="review-date">${when}${r.editedAt ? ' <span class="review-edited-tag">(edited)</span>' : ''}</div>
+      </div>`;
+  }
+
+  function renderReviewsList() {
+    const listEl = $('#reviewsList');
+    if (!listEl) return;
+    const reviews = ReviewsState.reviews;
+    if (!reviews.length) {
+      listEl.innerHTML = `<p class="review-empty">No reviews yet — be the first to rate Journey Begin's manga.</p>`;
+      return;
+    }
+    listEl.innerHTML = reviews.map(r => reviewRowHTML(r, Auth.user)).join('');
+  }
+
+  function starPickerHTML(selected) {
+    let html = '';
+    for (let i = 1; i <= 5; i++) {
+      html += `<button type="button" data-star="${i}" aria-label="${i} star${i > 1 ? 's' : ''}">${starSVG(i <= selected)}</button>`;
+    }
+    return `<div class="star-picker" id="reviewStarPicker">${html}</div>`;
+  }
+
+  function wireStarPicker(container) {
+    const picker = $('#reviewStarPicker', container);
+    if (!picker) return;
+    $$('button[data-star]', picker).forEach(btn => {
+      btn.addEventListener('click', () => {
+        reviewFormRating = parseInt(btn.dataset.star, 10);
+        $$('button[data-star]', picker).forEach(b => {
+          b.innerHTML = starSVG(parseInt(b.dataset.star, 10) <= reviewFormRating);
+        });
+      });
+    });
+  }
+
+  // Renders the sign-in prompt (logged out) or the rate/review form
+  // (logged in) — pre-filled with the reader's own existing review, if any,
+  // since a reader may only ever have one review on file.
+  function renderReviewForm() {
+    const wrap = $('#reviewFormWrap');
+    if (!wrap) return;
+    const user = Auth.user;
+
+    if (!user) {
+      wrap.innerHTML = `
+        <div class="review-login-note">
+          <span>Sign in to rate and review Journey Begin's manga.</span>
+          <button type="button" id="reviewLoginBtn">Sign In</button>
+        </div>`;
+      $('#reviewLoginBtn').addEventListener('click', () => $('#accountOverlay').classList.add('open'));
+      return;
+    }
+
+    const existing = ReviewsState.reviews.find(r => r.uid === user.uid);
+    reviewFormRating = existing ? (existing.rating || 0) : 0;
+
+    wrap.innerHTML = `
+      <form class="review-form" id="reviewForm">
+        <span class="review-form-label">${existing ? 'Update your review' : 'Rate & review Journey Begin'}</span>
+        ${starPickerHTML(reviewFormRating)}
+        <textarea id="reviewTextInput" maxlength="1000" placeholder="What did you think of the manga overall? (optional)">${existing ? escapeHTMLComment(existing.text || '') : ''}</textarea>
+        <div class="review-form-actions">
+          <button type="submit" class="review-submit-btn">${existing ? 'Update Review' : 'Post Review'}</button>
+          ${existing ? '<button type="button" class="review-delete-btn" id="reviewDeleteBtn">Delete</button>' : ''}
+        </div>
+      </form>`;
+
+    wireStarPicker(wrap);
+
+    $('#reviewForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!reviewFormRating) { toast('Please pick a star rating.', true); return; }
+      const fb = window.jbFirebase;
+      if (!fb || !fb.db) { toast('Reviews are unavailable right now.', true); return; }
+      const text = $('#reviewTextInput').value.trim();
+      const btn = e.target.querySelector('.review-submit-btn');
+      btn.disabled = true;
+      try {
+        const payload = {
+          uid: user.uid,
+          authorName: user.displayName || user.email || 'Reader',
+          rating: reviewFormRating,
+          text,
+          createdAt: existing ? existing.createdAt : fb.firebase.firestore.FieldValue.serverTimestamp()
+        };
+        if (existing) payload.editedAt = fb.firebase.firestore.FieldValue.serverTimestamp();
+        await fb.db.collection('reviews').doc(user.uid).set(payload, { merge: true });
+        toast(existing ? 'Review updated.' : 'Thanks for your review!');
+        await reloadReviews();
+      } catch (err) {
+        toast('Could not save review: ' + (err.message || err), true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    if (existing) {
+      $('#reviewDeleteBtn').addEventListener('click', async () => {
+        const ok = await customConfirm('Delete your review? This cannot be undone.', 'Delete');
+        if (!ok) return;
+        try {
+          await window.jbFirebase.db.collection('reviews').doc(user.uid).delete();
+          toast('Review deleted.');
+          await reloadReviews();
+        } catch (err) {
+          toast('Could not delete review: ' + (err.message || err), true);
+        }
+      });
+    }
+  }
+
+  async function reloadReviews() {
+    ReviewsState.reviews = await fetchReviews();
+    ReviewsState.loaded = true;
+    renderReviewsSummary();
+    renderReviewForm();
+    renderReviewsList();
+  }
+
+  // Lazy-loaded (see initLazySections) so reviews are only fetched once the
+  // section actually scrolls near the viewport.
+  async function loadReviewsSection() {
+    renderReviewForm(); // sign-in note / form appears immediately, no need to wait on the fetch
+    await reloadReviews();
+  }
+
   /* =====================================================================
      14. EVENT WIRING (search, bookmarks, reader controls, lightbox, modal)
   ===================================================================== */
@@ -1769,12 +2140,11 @@
     $('#readerClose').addEventListener('click', closeReader);
     $('#zoomIn').addEventListener('click', () => { ReaderState.zoom = Math.min(200, ReaderState.zoom + 10); updateZoomUI(); });
     $('#zoomOut').addEventListener('click', () => { ReaderState.zoom = Math.max(50, ReaderState.zoom - 10); updateZoomUI(); });
-    $('#fullscreenBtn').addEventListener('click', () => {
-      const reader = $('#reader');
-      if (!document.fullscreenElement) reader.requestFullscreen?.();
-      else document.exitFullscreen?.();
-    });
+    initReaderFullscreen();
     $('#readerPages').addEventListener('scroll', updateReaderProgress, { passive: true });
+    $('#readerScrollTop').addEventListener('click', () => {
+      $('#readerPages').scrollTo({ top: 0, behavior: 'smooth' });
+    });
 
     // lightbox
     $('#lightboxClose').addEventListener('click', closeLightbox);

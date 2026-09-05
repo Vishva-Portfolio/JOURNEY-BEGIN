@@ -198,6 +198,19 @@ ul{ list-style:none; }
 }
 .icon-btn svg{ width:19px; height:19px; fill: currentColor; }
 .icon-btn:hover{ color: var(--ice); }
+
+/* Account button: shows the generic person icon when signed out, and the
+   reader's own profile picture (or initial) in a circle once signed in. */
+.nav-avatar{
+  width:26px; height:26px; border-radius:50%; overflow:hidden; flex-shrink:0;
+  background: linear-gradient(135deg, var(--ice-deep), var(--violet-deep));
+  display:flex; align-items:center; justify-content:center;
+  font-family: var(--font-display); font-size:.7rem; color: var(--text-hi);
+  border:1px solid var(--hairline-strong);
+}
+.nav-avatar img{ width:100%; height:100%; object-fit:cover; display:block; border-radius:50%; }
+.nav-avatar.hidden{ display:none; }
+.account-btn.logged-in .account-icon-default{ display:none; }
 .badge{
   position:absolute; top:2px; right:2px; min-width:15px; height:15px; padding:0 3px;
   background: var(--violet); color: var(--text-hi); font-family: var(--font-mono);
@@ -498,6 +511,30 @@ ul{ list-style:none; }
 .account-name{ color: var(--text-hi); font-size:1.05rem; margin-bottom:.2rem; }
 .account-email{ color: var(--text-low); font-size:.8rem; margin-bottom:.2rem; }
 
+/* Edit-name control: a small pencil button beside the display name that
+   swaps it for an inline text field + Save/Cancel. */
+.account-name-row{ display:flex; align-items:center; justify-content:center; gap:.4rem; }
+.account-name-row .account-name{ margin-bottom:0; }
+.account-edit-name-btn{
+  width:24px; height:24px; display:flex; align-items:center; justify-content:center;
+  color: var(--text-low); flex-shrink:0;
+}
+.account-edit-name-btn svg{ width:14px; height:14px; fill:currentColor; }
+.account-edit-name-btn:hover{ color: var(--ice); }
+.account-name-form{
+  display:flex; flex-direction:column; gap:.5rem; margin:.4rem 0 .6rem; text-align:left;
+}
+.account-name-form input[type="text"]{
+  width:100%; background: var(--surface-2); border:1px solid var(--hairline-strong); color: var(--text-hi);
+  border-radius:6px; padding:.55rem .7rem; font-family: var(--font-body); outline:none; font-size:.9rem; text-align:center;
+}
+.account-name-form input[type="text"]:focus{ border-color: var(--ice-dim); }
+.account-name-form-actions{ display:flex; justify-content:center; gap:.5rem; }
+.account-name-form-actions button{ padding:.4rem 1rem; border-radius:6px; font-size:.78rem; border:1px solid var(--hairline-strong); }
+.account-name-form-actions .acct-btn-primary{ width:auto; margin-top:0; }
+.account-name-form-actions #accountEditNameCancel{ color: var(--text-low); background:none; }
+.account-name-form-actions #accountEditNameCancel:hover{ color: var(--text-hi); }
+
 /* Avatar upload (registration form) */
 .avatar-upload-row{ display:flex; align-items:center; gap: var(--sp-3); }
 .avatar-upload-preview{
@@ -551,42 +588,179 @@ ul{ list-style:none; }
    17. MANGA READER
 --------------------------------------------------------------------- */
 .reader{
-  position: fixed; inset:0; z-index:900; background: #050507;
+  position: fixed; inset:0; z-index:900;
+  background: radial-gradient(ellipse 90% 60% at 50% -8%, #17171f 0%, #0a0a0d 55%, #030304 100%);
   display:flex; flex-direction:column; transform: translateY(100%); transition: transform var(--dur-slow) var(--ease);
 }
 .reader.open{ transform: translateY(0); }
-.reader-topbar{
-  display:flex; align-items:center; justify-content:space-between; gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-4); background: rgba(10,10,14,0.9); border-bottom: 1px solid var(--hairline);
-  flex-shrink:0; flex-wrap:wrap;
+
+/* Thin gradient bar tracking how far through the chapter's pages the
+   reader has scrolled — spans the very top edge of the reader overlay. */
+.reader-progress-bar{
+  position:absolute; top:0; left:0; height:2px; width:0%; z-index:20;
+  background: linear-gradient(90deg, var(--ice-deep), var(--ice), var(--violet));
+  box-shadow: 0 0 8px rgba(143,211,236,0.5);
+  transition: width .12s linear;
 }
-.reader-title{ display:flex; flex-direction:column; text-align:center; flex:1; min-width:150px; }
-.reader-title span:first-child{ font-family: var(--font-display); color: var(--text-hi); font-size:.95rem; }
-.reader-chapter{ font-family: var(--font-mono); font-size:.65rem; color: var(--text-low); text-transform:uppercase; letter-spacing:.05em; }
-.reader-btn{ width:36px; height:36px; display:flex; align-items:center; justify-content:center; color: var(--text-mid); border: 1px solid var(--hairline); transition: color var(--dur-fast), border-color var(--dur-fast); font-size:1.1rem; }
-.reader-btn:hover{ color: var(--ice); border-color: var(--ice-dim); }
+
+.reader-topbar{
+  position:relative; display:flex; align-items:center; justify-content:space-between; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4); background: rgba(10,10,14,0.72); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--hairline-strong); flex-shrink:0; flex-wrap:wrap;
+  box-shadow: 0 8px 26px rgba(0,0,0,0.4);
+}
+.reader-title{ display:flex; flex-direction:column; text-align:center; flex:1; min-width:150px; gap:.15rem; }
+.reader-title span:first-child{ font-family: var(--font-display); color: var(--text-hi); font-size:1rem; letter-spacing:.02em; }
+.reader-chapter{ font-family: var(--font-mono); font-size:.65rem; color: var(--ice); text-transform:uppercase; letter-spacing:.07em; }
+.reader-btn{
+  width:38px; height:38px; display:flex; align-items:center; justify-content:center; color: var(--text-mid);
+  border: 1px solid var(--hairline-strong); border-radius:9px; background: rgba(255,255,255,0.02);
+  transition: color var(--dur-fast), border-color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast);
+  font-size:1.1rem;
+}
+.reader-btn:hover{ color: var(--ice); border-color: var(--ice-dim); background: rgba(143,211,236,0.08); transform: translateY(-1px); }
 .reader-btn svg{ width:16px; height:16px; fill:currentColor; }
-.reader-controls{ display:flex; align-items:center; gap: var(--sp-2); }
+.reader-controls{
+  display:flex; align-items:center; gap: var(--sp-2);
+  background: rgba(255,255,255,0.03); border:1px solid var(--hairline); border-radius:11px; padding:.25rem .4rem;
+}
 .reader-zoom-level{ font-family: var(--font-mono); font-size:.68rem; color: var(--text-low); width:38px; text-align:center; }
 
 .reader-pages{
-  flex:1; overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; align-items:center;
-  padding: var(--sp-4) 0; scroll-behavior:smooth;
+  position:relative; flex:1; overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; align-items:center;
+  padding: var(--sp-5) 0 var(--sp-4); gap: var(--sp-4); scroll-behavior:smooth;
+  background:
+    radial-gradient(ellipse 60% 30% at 50% 0%, rgba(143,211,236,0.06), transparent 60%),
+    radial-gradient(ellipse 60% 30% at 50% 100%, rgba(138,120,201,0.06), transparent 60%),
+    repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+  /* thin faceted guide-line running behind the pages, like a bound spine */
 }
-.reader-page-wrap{ width: var(--reader-zoom, 100%); max-width: 900px; transition: width var(--dur-fast) var(--ease); }
+.reader-pages::before{
+  content:''; position:absolute; top:0; bottom:0; left:50%; width:1px; transform: translateX(-50%);
+  background: linear-gradient(180deg, transparent, var(--hairline-strong) 15%, var(--hairline-strong) 85%, transparent);
+  pointer-events:none; z-index:0;
+}
+/* thin scrollbar to match the theme, on browsers that support it */
+.reader-pages{ scrollbar-width: thin; scrollbar-color: var(--ice-dim) transparent; }
+.reader-pages::-webkit-scrollbar{ width:8px; }
+.reader-pages::-webkit-scrollbar-track{ background: transparent; }
+.reader-pages::-webkit-scrollbar-thumb{ background: var(--surface-3); border-radius:8px; border:2px solid transparent; background-clip:padding-box; }
+.reader-pages::-webkit-scrollbar-thumb:hover{ background: var(--ice-dim); background-clip:padding-box; }
+
+.reader-page-wrap{
+  width: var(--reader-zoom, 100%); max-width: 900px; transition: width var(--dur-fast) var(--ease), box-shadow var(--dur-med) var(--ease), transform var(--dur-med) var(--ease);
+  position:relative; overflow:hidden; background: var(--surface); z-index:1;
+  clip-path: polygon(18px 0,100% 0,100% calc(100% - 18px),calc(100% - 18px) 100%,0 100%,0 18px);
+  box-shadow:
+    0 26px 60px rgba(0,0,0,0.55),
+    0 2px 0 rgba(255,255,255,0.03) inset,
+    0 0 0 1px var(--hairline-strong);
+  animation: readerPageIn .6s var(--ease) both;
+}
+/* faceted corner accents — a quiet frame that reads as "gallery matting"
+   rather than a plain rectangle, echoing the site's crystal-cut language */
+.reader-page-wrap::before,
+.reader-page-wrap::after{
+  content:''; position:absolute; width:26px; height:26px; pointer-events:none; z-index:3; opacity:.85;
+}
+.reader-page-wrap::before{
+  top:0; left:0; border-top:2px solid var(--ice-dim); border-left:2px solid var(--ice-dim);
+}
+.reader-page-wrap::after{
+  bottom:0; right:0; border-bottom:2px solid var(--violet-dim); border-right:2px solid var(--violet-dim);
+}
+.reader-page-wrap:hover{ box-shadow: 0 30px 70px rgba(0,0,0,0.6), 0 0 0 1px var(--ice-dim), 0 0 32px rgba(143,211,236,0.1); }
 .reader-page-wrap img{ width:100%; height:auto; display:block; }
-.reader-loading-page{
-  width:100%; aspect-ratio: 3/4.2; background: linear-gradient(160deg, var(--surface), var(--surface-2));
-  display:flex; align-items:center; justify-content:center; color: var(--text-low); font-family: var(--font-mono); font-size:.75rem;
+.reader-page-wrap .page-number-tag{
+  position:absolute; bottom:12px; right:12px; z-index:4; font-family: var(--font-mono); font-size:.65rem; letter-spacing:.08em;
+  color: var(--text-hi); background: rgba(5,5,7,0.72); border:1px solid var(--hairline-strong);
+  padding:.28rem .65rem; backdrop-filter: blur(6px); pointer-events:none;
+  clip-path: polygon(6px 0,100% 0,100% 100%,0 100%,0 6px);
 }
+@keyframes readerPageIn{ from{ opacity:0; transform: translateY(20px) scale(.985); } to{ opacity:1; transform:none; } }
+
+/* Skeleton shimmer shown for a page still loading / not yet uploaded —
+   reads as an intentional placeholder rather than a broken image. */
+.reader-loading-page{
+  width:100%; aspect-ratio: 3/4.2; position:relative; overflow:hidden;
+  background: linear-gradient(160deg, var(--surface), var(--surface-2));
+  display:flex; align-items:center; justify-content:center; text-align:center;
+  color: var(--text-low); font-family: var(--font-mono); font-size:.75rem; line-height:1.6; padding: var(--sp-3);
+  clip-path: polygon(18px 0,100% 0,100% calc(100% - 18px),calc(100% - 18px) 100%,0 100%,0 18px);
+  box-shadow: 0 0 0 1px var(--hairline-strong);
+}
+.reader-loading-page::before{
+  content:''; position:absolute; inset:0;
+  background: linear-gradient(100deg, transparent 30%, rgba(143,211,236,0.06) 48%, rgba(138,120,201,0.08) 52%, transparent 70%);
+  background-size: 200% 100%; animation: readerShimmer 2.4s linear infinite;
+}
+@keyframes readerShimmer{ from{ background-position: 160% 0; } to{ background-position: -60% 0; } }
+
+/* Floating "back to top" control, only shown once the reader has scrolled
+   a little way into the chapter. */
+.reader-scrolltop{
+  position:absolute; right: var(--sp-4); bottom: 92px; width:42px; height:42px; border-radius:50%; z-index:15;
+  display:flex; align-items:center; justify-content:center; color: var(--text-hi);
+  background: linear-gradient(135deg, var(--ice-deep), var(--violet-deep)); border:1px solid var(--ice-dim);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.5);
+  opacity:0; visibility:hidden; transform: translateY(10px);
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), visibility var(--dur-fast), filter var(--dur-fast);
+}
+.reader-scrolltop svg{ width:18px; height:18px; fill:currentColor; }
+.reader-scrolltop.show{ opacity:1; visibility:visible; transform:none; }
+.reader-scrolltop:hover{ filter: brightness(1.15); }
+
 .reader-bottombar{
   display:flex; align-items:center; justify-content:space-between; padding: var(--sp-3) var(--sp-4);
-  background: rgba(10,10,14,0.9); border-top: 1px solid var(--hairline); flex-shrink:0; gap: var(--sp-2); flex-wrap:wrap;
+  padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
+  background: rgba(10,10,14,0.72); backdrop-filter: blur(12px); border-top: 1px solid var(--hairline-strong);
+  flex-shrink:0; gap: var(--sp-2); flex-wrap:wrap; box-shadow: 0 -8px 26px rgba(0,0,0,0.4);
 }
-.reader-nav-btn{ font-family: var(--font-mono); font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color: var(--text-mid); border: 1px solid var(--hairline); padding: .7em 1.2em; transition: color var(--dur-fast), border-color var(--dur-fast); }
-.reader-nav-btn:hover:not(:disabled){ color: var(--ice); border-color: var(--ice-dim); }
+.reader-nav-btn{
+  font-family: var(--font-mono); font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color: var(--text-mid);
+  border: 1px solid var(--hairline-strong); border-radius:9px; padding: .7em 1.2em; background: rgba(255,255,255,0.02);
+  transition: color var(--dur-fast), border-color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast);
+}
+.reader-nav-btn:hover:not(:disabled){ color: var(--ice); border-color: var(--ice-dim); background: rgba(143,211,236,0.08); transform: translateY(-1px); }
 .reader-nav-btn:disabled{ opacity:.3; cursor:not-allowed; }
-.reader-progress{ font-family: var(--font-mono); font-size:.68rem; color: var(--text-low); }
+.reader-progress{
+  font-family: var(--font-mono); font-size:.7rem; color: var(--text-hi); letter-spacing:.04em;
+  background: rgba(255,255,255,0.04); border:1px solid var(--hairline); border-radius:20px; padding:.4rem 1rem;
+}
+
+/* Fullscreen button shows one of two icon states, toggled via JS by
+   adding/removing .is-active (native Fullscreen API engaged, or the
+   immersive fallback used where the API isn't available — e.g. iOS
+   Safari, which does not support element-level fullscreen at all). */
+#fullscreenBtn .icon-expand{ display:block; }
+#fullscreenBtn .icon-compress{ display:none; }
+#fullscreenBtn.is-active .icon-expand{ display:none; }
+#fullscreenBtn.is-active .icon-compress{ display:block; }
+#fullscreenBtn.is-active{ color: var(--ice); border-color: var(--ice-dim); background: rgba(143,211,236,0.1); }
+
+/* Immersive reading mode — the cross-device "fullscreen" fallback. On
+   devices/browsers where the real Fullscreen API is unavailable or is
+   rejected (this is normal/expected on iOS Safari), the reader instead
+   hides its chrome and lets pages fill the viewport edge-to-edge, with a
+   small floating control to bring the bars back. */
+.reader.immersive .reader-topbar,
+.reader.immersive .reader-bottombar{
+  transform: translateY(-100%); opacity:0; pointer-events:none;
+}
+.reader.immersive .reader-bottombar{ transform: translateY(100%); }
+.reader-topbar, .reader-bottombar{ transition: transform var(--dur-med) var(--ease), opacity var(--dur-med) var(--ease); }
+.reader.immersive .reader-pages{ padding-top: var(--sp-3); }
+
+.reader-immersive-exit{
+  position:absolute; top: var(--sp-3); right: var(--sp-3); z-index:25; width:40px; height:40px;
+  display:flex; align-items:center; justify-content:center; color: var(--text-hi);
+  background: rgba(10,10,14,0.7); border:1px solid var(--hairline-strong); backdrop-filter: blur(10px);
+  border-radius:50%; opacity:0; visibility:hidden; transform: translateY(-8px);
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), visibility var(--dur-fast);
+}
+.reader-immersive-exit svg{ width:16px; height:16px; fill:currentColor; }
+.reader.immersive .reader-immersive-exit{ opacity:1; visibility:visible; transform:none; }
+.reader-immersive-exit:hover{ color: var(--ice); border-color: var(--ice-dim); }
 
 /* ---------------------------------------------------------------------
    17b. CHAPTER COMMENTS (Instagram-style, inside reader below last page)
@@ -634,10 +808,11 @@ ul{ list-style:none; }
 .comment-row{ display:flex; align-items:flex-start; gap: var(--sp-2); }
 .comment-row.is-reply{ margin-left: 2.6rem; margin-top: var(--sp-2); }
 .comment-avatar{
-  width:32px; height:32px; border-radius:50%; flex-shrink:0;
+  width:32px; height:32px; border-radius:50%; flex-shrink:0; overflow:hidden;
   background: linear-gradient(135deg, var(--ice-deep), var(--violet-deep));
   display:flex; align-items:center; justify-content:center; font-family: var(--font-display); font-size:.8rem; color: var(--text-hi);
 }
+.comment-avatar img{ width:100%; height:100%; object-fit:cover; display:block; border-radius:50%; }
 .comment-row.is-reply .comment-avatar{ width:26px; height:26px; font-size:.7rem; }
 .comment-body{ flex:1; min-width:0; }
 .comment-line{ display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap; }
@@ -719,6 +894,81 @@ ul{ list-style:none; }
 }
 .reply-form button:hover{ filter: brightness(1.15); }
 
+/* ---------------------------------------------------------------------
+   17c. REVIEWS & RATINGS (site-wide, one review per signed-in reader)
+--------------------------------------------------------------------- */
+.reviews-summary{
+  display:flex; align-items:center; gap: var(--sp-4); flex-wrap:wrap;
+  background: var(--surface); border:1px solid var(--hairline-strong); border-radius:10px;
+  padding: var(--sp-4); margin-bottom: var(--sp-4);
+}
+.reviews-summary-score{ font-family: var(--font-display); font-size:2.4rem; color: var(--text-hi); line-height:1; }
+.reviews-summary-meta{ display:flex; flex-direction:column; gap:.3rem; }
+.reviews-summary-stars{ display:flex; gap:.15rem; }
+.reviews-summary-stars svg{ width:18px; height:18px; }
+.reviews-summary-count{ font-size:.8rem; color: var(--text-low); font-family: var(--font-mono); }
+
+/* Star icon states, shared by the summary, the picker and every review row */
+.star-icon{ fill:none; stroke: var(--text-low); stroke-width:1.6; }
+.star-icon.filled{ fill: var(--ice); stroke: var(--ice); }
+
+/* Interactive star picker (form) */
+.star-picker{ display:flex; gap:.25rem; }
+.star-picker button{ padding:.1rem; line-height:0; }
+.star-picker svg{ width:26px; height:26px; transition: transform var(--dur-fast) var(--ease); }
+.star-picker button:hover svg{ transform: scale(1.12); }
+
+.review-form-wrap{ margin-bottom: var(--sp-5); }
+.review-login-note{
+  display:flex; align-items:center; justify-content:space-between; gap: var(--sp-3);
+  background: var(--surface); border:1px solid var(--hairline); border-radius:8px;
+  padding: var(--sp-3); font-size:.85rem; color: var(--text-mid); flex-wrap:wrap;
+}
+.review-login-note button{
+  padding:.5rem 1rem; border-radius:6px; border:1px solid var(--ice-dim); color: var(--ice); background:none; font-size:.8rem;
+}
+.review-login-note button:hover{ background: rgba(143,211,236,0.08); }
+
+.review-form{
+  display:flex; flex-direction:column; gap: var(--sp-3);
+  background: var(--surface); border:1px solid var(--hairline-strong); border-radius:10px; padding: var(--sp-4);
+}
+.review-form-label{ font-size:.78rem; color: var(--text-low); font-family: var(--font-mono); text-transform:uppercase; letter-spacing:.05em; }
+.review-form textarea{
+  width:100%; min-height:70px; resize:vertical; background: var(--surface-2); border:1px solid var(--hairline-strong);
+  color: var(--text-hi); border-radius:8px; padding:.7rem .8rem; font-family: var(--font-body); outline:none;
+}
+.review-form textarea:focus{ border-color: var(--ice-dim); }
+.review-form-actions{ display:flex; align-items:center; gap: var(--sp-3); flex-wrap:wrap; }
+.review-form-actions button{ padding:.55rem 1.1rem; border-radius:8px; font-size:.85rem; }
+.review-submit-btn{ border:1px solid var(--ice-dim); background: linear-gradient(135deg, var(--ice-deep), var(--violet-deep)); color: var(--text-hi); }
+.review-submit-btn:hover{ filter: brightness(1.15); }
+.review-delete-btn{ border:1px solid rgba(224,138,138,0.5); color: var(--status-danger); background:none; }
+.review-delete-btn:hover{ background: rgba(224,138,138,0.1); }
+
+.review-list{ display:grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: var(--sp-4); }
+.review-empty{ grid-column: 1 / -1; color: var(--text-low); font-size:.85rem; }
+.review-row{
+  display:flex; flex-direction:column; gap: var(--sp-2); background: var(--surface); border:1px solid var(--hairline);
+  padding: var(--sp-4); transition: border-color var(--dur-fast), transform var(--dur-fast);
+}
+.review-row:hover{ transform: translateY(-4px); border-color: var(--hairline-strong); }
+.review-row-head{ display:flex; align-items:center; gap: var(--sp-2); }
+.review-avatar{
+  width:38px; height:38px; border-radius:50%; flex-shrink:0; overflow:hidden;
+  background: linear-gradient(135deg, var(--ice-deep), var(--violet-deep));
+  display:flex; align-items:center; justify-content:center; font-family: var(--font-display); font-size:.9rem; color: var(--text-hi);
+}
+.review-avatar img{ width:100%; height:100%; object-fit:cover; display:block; border-radius:50%; }
+.review-meta{ flex:1; min-width:0; }
+.review-author-line{ display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+.review-author{ font-size:.9rem; color: var(--text-hi); font-weight:600; }
+.review-stars{ display:flex; gap:.1rem; margin-top:.2rem; }
+.review-stars svg{ width:14px; height:14px; }
+.review-date{ font-family: var(--font-mono); font-size:.68rem; color: var(--text-low); letter-spacing:.03em; }
+.review-edited-tag{ font-size:.7rem; color: var(--text-low); font-style:italic; }
+.review-text{ font-size:.88rem; color: var(--text-mid); line-height:1.45; white-space:pre-wrap; word-break:break-word; }
+.review-own-tag{ font-size:.68rem; font-family: var(--font-mono); text-transform:uppercase; letter-spacing:.04em; color: var(--ice); border:1px solid var(--ice-dim); border-radius:5px; padding:.1rem .4rem; }
 
 /* ---------------------------------------------------------------------
    18. LIGHTBOX
@@ -783,13 +1033,53 @@ ul{ list-style:none; }
 }
 
 @media (max-width: 860px){
+  .nav-actions{ gap: var(--sp-1); }
+  .icon-btn{ width:36px; height:36px; }
+  .icon-btn svg{ width:17px; height:17px; }
+  .hamburger{ width:36px; }
+
   .nav-links{
-    position:fixed; top:76px; left:0; right:0; bottom:0; background: rgba(7,7,10,0.98);
-    flex-direction:column; align-items:center; justify-content:center; gap: var(--sp-5);
-    transform: translateX(100%); transition: transform var(--dur-med) var(--ease); z-index:400;
+    position:fixed; top:76px; left:0; right:0; bottom:0; z-index:400;
+    background:
+      radial-gradient(ellipse 70% 45% at 50% 15%, rgba(143,211,236,0.06), transparent 60%),
+      radial-gradient(ellipse 70% 45% at 50% 85%, rgba(138,120,201,0.07), transparent 60%),
+      rgba(7,7,10,0.98);
+    backdrop-filter: blur(18px);
+    flex-direction:column; align-items:stretch; justify-content:center; gap:0;
+    padding: var(--sp-5) var(--edge) calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
+    transform: translateX(100%); opacity:0;
+    transition: transform var(--dur-med) var(--ease), opacity var(--dur-med) var(--ease);
+    overflow-y:auto;
   }
-  .nav-links.open{ transform: translateX(0); }
-  .nav-link{ font-size:1.1rem; }
+  .nav-links.open{ transform: translateX(0); opacity:1; }
+
+  .nav-link{
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:1.15rem; font-family: var(--font-display); letter-spacing:.03em; text-transform:none;
+    padding: var(--sp-3) .2rem; border-bottom:1px solid var(--hairline);
+    color: var(--text-mid); opacity:0; transform: translateY(10px);
+    transition: color var(--dur-fast) var(--ease), opacity var(--dur-med) var(--ease), transform var(--dur-med) var(--ease);
+  }
+  .nav-link::after{ display:none; }
+  .nav-link::before{
+    content:''; width:6px; height:6px; border-radius:50%; background: var(--ice); opacity:0;
+    transition: opacity var(--dur-fast) var(--ease); margin-right:.6em; flex-shrink:0;
+  }
+  .nav-link.active{ color: var(--text-hi); }
+  .nav-link.active::before{ opacity:1; }
+  .nav-link:hover{ color: var(--ice); padding-left:.5rem; }
+
+  /* Staggered reveal once the panel is open — quiet, cinematic, and gives
+     the menu a sense of depth rather than appearing all at once. */
+  .nav-links.open .nav-link{ opacity:1; transform:none; }
+  .nav-links.open .nav-link:nth-child(1){ transition-delay:.05s; }
+  .nav-links.open .nav-link:nth-child(2){ transition-delay:.09s; }
+  .nav-links.open .nav-link:nth-child(3){ transition-delay:.13s; }
+  .nav-links.open .nav-link:nth-child(4){ transition-delay:.17s; }
+  .nav-links.open .nav-link:nth-child(5){ transition-delay:.21s; }
+  .nav-links.open .nav-link:nth-child(6){ transition-delay:.25s; }
+  .nav-links.open .nav-link:nth-child(7){ transition-delay:.29s; }
+
   .hamburger{ display:flex; }
   .chapter-card{ grid-template-columns: 60px 1fr; grid-template-areas: "num info" "num status" "btn btn"; row-gap: var(--sp-2); }
   .chapter-num{ grid-area: num; }
@@ -798,9 +1088,17 @@ ul{ list-style:none; }
   .chapter-read-btn{ grid-area: btn; justify-self:start; }
 }
 
+@media (max-width: 400px){
+  .logo-text{ font-size:.92rem; }
+  .nav-actions{ gap:.3rem; }
+  .icon-btn{ width:33px; height:33px; }
+  .hamburger{ width:33px; }
+}
+
 @media (max-width: 640px){
   :root{ --sp-6: 3rem; --sp-7: 4rem; }
   .nav-inner{ height:64px; }
+  .nav-links{ top:64px; }
   .hero{ padding-top:64px; }
   .hero-title{ font-size: clamp(2.1rem, 11vw, 3rem); }
   .manga-grid{ grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
@@ -808,8 +1106,17 @@ ul{ list-style:none; }
   .gallery-grid{ grid-template-columns: 1fr 1fr; }
   .footer-inner{ flex-direction:column; gap: var(--sp-4); }
   .footer-copy{ align-self:flex-start; }
-  .reader-topbar{ justify-content:center; }
+  .reader-topbar{ justify-content:center; padding: var(--sp-2) var(--sp-3); }
   .reader-title{ order:3; width:100%; }
+  .reader-title span:first-child{ font-size:.9rem; }
+  .reader-btn{ width:34px; height:34px; }
+  .reader-controls{ padding:.2rem .3rem; gap:.5rem; }
+  .reader-bottombar{ padding: var(--sp-2) var(--sp-3); }
+  .reader-nav-btn{ font-size:.66rem; padding:.65em .85em; }
+  .reader-progress{ padding:.35rem .8rem; }
+  .reader-page-wrap, .reader-loading-page{ clip-path: polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px); }
+  .reader-page-wrap::before, .reader-page-wrap::after{ width:18px; height:18px; }
+  .reader-scrolltop{ width:38px; height:38px; bottom:80px; right: var(--sp-3); }
 }
 
 @media (max-width: 420px){

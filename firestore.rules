@@ -127,5 +127,26 @@ service cloud.firestore {
                           && request.time < resource.data.createdAt + duration.value(1, 'd'));
       }
     }
+
+    // Site-wide "overall manga" reviews & star ratings: anyone can read;
+    // only a signed-in reader can write, and only their own single review
+    // (the document ID is always the reviewer's own uid, so each reader
+    // can ever have at most one review on file — posting again overwrites
+    // their previous one instead of creating a duplicate). Ratings must be
+    // a whole number from 1 to 5; the written portion is optional but
+    // capped in length. The reader can update or delete their own review
+    // at any time; admins can moderate (delete) any review.
+    match /reviews/{uid} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.resource.data.uid == uid
+                    && request.resource.data.rating is int
+                    && request.resource.data.rating >= 1
+                    && request.resource.data.rating <= 5
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() <= 1000;
+      allow delete: if isAdmin() || (request.auth != null && request.auth.uid == uid);
+    }
   }
 }
