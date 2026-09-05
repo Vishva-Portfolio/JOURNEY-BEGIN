@@ -474,6 +474,23 @@ ul{ list-style:none; }
 /* ---------------------------------------------------------------------
    16b. ACCOUNT PANEL (reader sign in / register / profile)
 --------------------------------------------------------------------- */
+/* Site nav links, shown inside the Account panel on mobile only — desktop
+   already has them in the top nav bar, so this stays hidden there. This
+   replaces the old separate hamburger dropdown: on mobile there's now a
+   single slide-in panel (tap the account icon) with the site menu on top
+   and sign-in / profile below it. */
+.account-menu-links{ display:none; }
+@media (max-width: 860px){
+  /* .nav-link itself already gets the right mobile look (dot bullet,
+     active/hover state, border-bottom row) from the header-nav mobile
+     rules further down — reused here so both menus stay visually identical. */
+  .account-menu-links{
+    display:flex; flex-direction:column;
+    margin-bottom: var(--sp-4); padding-bottom: var(--sp-1);
+    border-bottom: 1px solid var(--hairline-strong);
+  }
+  .account-menu-links .nav-link{ opacity:1; transform:none; padding:.75em .1rem; }
+}
 .account-tabs{ display:flex; gap: var(--sp-2); margin-bottom: var(--sp-4); border-bottom: 1px solid var(--hairline); }
 .account-tab{
   font-family: var(--font-mono); font-size:.72rem; letter-spacing:.06em; text-transform:uppercase;
@@ -650,6 +667,13 @@ ul{ list-style:none; }
 .reader-page-wrap{
   width: var(--reader-zoom, 100%); max-width: 900px; transition: width var(--dur-fast) var(--ease), box-shadow var(--dur-med) var(--ease), transform var(--dur-med) var(--ease);
   position:relative; overflow:hidden; background: var(--surface); z-index:1;
+  /* while a page is loading/pending, it has no <img> intrinsic size yet —
+     give it a real footprint so a stuck/broken page image is clearly visible
+     (an error message) instead of collapsing to nothing. */
+}
+.reader-page-wrap.is-loading{ min-height: 320px; }
+.reader-page-wrap .reader-page-broken{ color: var(--text-mid); }
+.reader-page-wrap{
   clip-path: polygon(18px 0,100% 0,100% calc(100% - 18px),calc(100% - 18px) 100%,0 100%,0 18px);
   box-shadow:
     0 26px 60px rgba(0,0,0,0.55),

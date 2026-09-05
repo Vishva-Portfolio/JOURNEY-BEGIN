@@ -86,9 +86,6 @@
         <svg class="account-icon-default" id="accountIconDefault" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v2h16v-2c0-2.8-3.6-5-8-5z"/></svg>
         <span class="nav-avatar hidden" id="navAvatar"></span>
       </button>
-      <button class="hamburger" id="hamburgerBtn" aria-label="Menu" aria-expanded="false">
-        <span></span><span></span><span></span>
-      </button>
     </div>
   </div>
 </header>
@@ -139,6 +136,19 @@
         <svg viewBox="0 0 24 24"><path d="M6.4 4.98L12 10.59l5.6-5.6 1.4 1.4-5.6 5.6 5.6 5.6-1.4 1.4-5.6-5.6-5.6 5.6-1.4-1.4 5.6-5.6-5.6-5.6z"/></svg>
       </button>
     </div>
+
+    <!-- Site navigation, moved in here for mobile so there's one consistent
+         slide-in panel instead of a separate hamburger menu. Hidden on
+         desktop, where the links already live in the top nav bar. -->
+    <nav class="account-menu-links" id="accountMenuLinks" aria-label="Site menu">
+      <a href="#home" class="nav-link" data-nav-link>Home</a>
+      <a href="#manga" class="nav-link" data-nav-link>Manga</a>
+      <a href="#discover" class="nav-link" data-nav-link>Discover</a>
+      <a href="#characters" class="nav-link" data-nav-link>Characters</a>
+      <a href="#world" class="nav-link" data-nav-link>Worlds</a>
+      <a href="#news" class="nav-link" data-nav-link>News</a>
+      <a href="#reviews" class="nav-link" data-nav-link>Reviews</a>
+    </nav>
 
     <!-- Logged-out view -->
     <div id="accountAuthView">

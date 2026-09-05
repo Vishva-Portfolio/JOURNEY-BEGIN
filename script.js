@@ -754,14 +754,50 @@
       const num = String(p).padStart(2, '0');
       const src = pageImages ? pageImages[p - 1] : `assets/manga/${mangaId}/chapter-${chapter.number}/page-${num}.jpg`;
       const div = document.createElement('div');
-      div.className = 'reader-page-wrap';
-      div.innerHTML = `<img data-page="${p}" src="${src}" alt="Page ${p}" loading="lazy"><span class="page-number-tag">${p} / ${pageCount}</span>`;
+      // Reserve real space immediately (skeleton shimmer) instead of a 0-height
+      // wrapper — otherwise a page whose image never resolves (blocked host,
+      // hotlink protection, dead link) just collapses to an invisible sliver
+      // and the whole chapter looks blank instead of showing an error.
+      div.className = 'reader-page-wrap is-loading';
+      div.innerHTML = `
+        <div class="reader-loading-page">Loading page ${num}…</div>
+        <img data-page="${p}" src="${src}" alt="Page ${p}" loading="lazy" referrerpolicy="no-referrer" style="display:none">
+        <span class="page-number-tag">${p} / ${pageCount}</span>`;
       pagesWrap.appendChild(div);
       const img = $('img', div);
-      img.addEventListener('error', () => {
+      const skeleton = $('.reader-loading-page', div);
+
+      // Treat as failed if either: the browser fires 'error' (bad/blocked URL),
+      // or the request just hangs and never resolves either way (common with
+      // hotlink-protected or ad-blocked image hosts like some imgbb links).
+      let settled = false;
+      const showBroken = () => {
+        if (settled) return;
+        settled = true;
         img.onerror = null;
-        div.innerHTML = `<div class="reader-loading-page">Page ${num} — drop your art at<br>${src}</div>`;
-      }, { once: true });
+        div.classList.remove('is-loading');
+        const isHttp = /^https?:\/\//i.test(src);
+        div.innerHTML = `
+          <div class="reader-loading-page reader-page-broken">
+            Page ${num} didn't load.<br>
+            ${isHttp
+              ? `The image link may be broken, private, or blocking hotlinking:<br><a href="${src}" target="_blank" rel="noopener noreferrer" style="color:var(--ice);word-break:break-all;">${src}</a>`
+              : `Drop your art at<br>${src}`}
+          </div>`;
+      };
+      const showLoaded = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        skeleton.remove();
+        img.style.display = 'block';
+        div.classList.remove('is-loading');
+      };
+      // Some blocked/hotlink-protected hosts never fire 'load' or 'error' —
+      // the request just hangs — so fall back to broken after a timeout.
+      const timeoutId = setTimeout(showBroken, 15000);
+      img.addEventListener('load', showLoaded, { once: true });
+      img.addEventListener('error', () => { clearTimeout(timeoutId); showBroken(); }, { once: true });
     }
 
     // Comments live at the bottom of the scrollable page area, after the
@@ -995,18 +1031,12 @@
     });
   }
 
-  function initHamburger() {
-    const btn = $('#hamburgerBtn');
-    const links = $('#navLinks');
-    btn.addEventListener('click', () => {
-      const open = links.classList.toggle('open');
-      btn.setAttribute('aria-expanded', String(open));
-      document.body.style.overflow = open ? 'hidden' : '';
-    });
-  }
+  // On mobile the site menu now lives inside the Account panel (see
+  // #accountMenuLinks in index.html) instead of a separate hamburger
+  // dropdown, so tapping a nav link just closes that panel.
   function closeMobileMenu() {
-    $('#navLinks').classList.remove('open');
-    $('#hamburgerBtn').setAttribute('aria-expanded', 'false');
+    const overlay = $('#accountOverlay');
+    if (overlay) overlay.classList.remove('open');
     document.body.style.overflow = '';
   }
 
@@ -2196,7 +2226,6 @@
     SEARCH_INDEX = buildSearchIndex();
 
     initNav();
-    initHamburger();
     initReveals();
     initOverlaysAndControls();
     updateBookmarkCount();
