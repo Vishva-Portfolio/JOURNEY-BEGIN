@@ -761,16 +761,28 @@
       div.className = 'reader-page-wrap is-loading';
       div.innerHTML = `
         <div class="reader-loading-page">Loading page ${num}…</div>
-        <img data-page="${p}" src="${src}" alt="Page ${p}" loading="lazy" referrerpolicy="no-referrer" style="display:none">
+        <img data-page="${p}" alt="Page ${p}" loading="lazy" referrerpolicy="no-referrer" style="display:none">
         <span class="page-number-tag">${p} / ${pageCount}</span>`;
       pagesWrap.appendChild(div);
-      const img = $('img', div);
-      const skeleton = $('.reader-loading-page', div);
+      let img = $('img', div);
+      let skeleton = $('.reader-loading-page', div);
 
       // Treat as failed if either: the browser fires 'error' (bad/blocked URL),
       // or the request just hangs and never resolves either way (common with
-      // hotlink-protected or ad-blocked image hosts like some imgbb links).
+      // hotlink-protected or ad-blocked image hosts like some imgbb links,
+      // or simply a large multi-MB page image over a slow/mobile connection).
       let settled = false;
+      let attempt = 0;
+      const startLoad = () => {
+        settled = false;
+        attempt++;
+        clearTimeout(timeoutId); // clear any stale timer from a previous attempt
+        // eslint-disable-next-line no-use-before-define
+        timeoutId = setTimeout(showBroken, 45000);
+        // Cache-bust only on manual retry, not the first attempt, so a
+        // normal successful load still benefits from the browser cache.
+        img.src = attempt > 1 ? src + (src.includes('?') ? '&' : '?') + 'retry=' + Date.now() : src;
+      };
       const showBroken = () => {
         if (settled) return;
         settled = true;
@@ -781,9 +793,22 @@
           <div class="reader-loading-page reader-page-broken">
             Page ${num} didn't load.<br>
             ${isHttp
-              ? `The image link may be broken, private, or blocking hotlinking:<br><a href="${src}" target="_blank" rel="noopener noreferrer" style="color:var(--ice);word-break:break-all;">${src}</a>`
+              ? `This can happen with a slow connection or a host that's blocking the request:<br><a href="${src}" target="_blank" rel="noopener noreferrer" style="color:var(--ice);word-break:break-all;">${src}</a>`
               : `Drop your art at<br>${src}`}
+            <br><button type="button" class="reader-page-retry" style="margin-top:.6rem;background:none;border:1px solid var(--hairline-strong);color:var(--ice);padding:.4em 1em;font-family:var(--font-mono);font-size:.7rem;cursor:pointer;">Retry</button>
           </div>`;
+        $('.reader-page-retry', div)?.addEventListener('click', () => {
+          div.classList.add('is-loading');
+          div.innerHTML = `
+            <div class="reader-loading-page">Loading page ${num}…</div>
+            <img data-page="${p}" alt="Page ${p}" loading="lazy" referrerpolicy="no-referrer" style="display:none">
+            <span class="page-number-tag">${p} / ${pageCount}</span>`;
+          img = $('img', div);
+          skeleton = $('.reader-loading-page', div);
+          img.addEventListener('load', showLoaded, { once: true });
+          img.addEventListener('error', () => { clearTimeout(timeoutId); showBroken(); }, { once: true });
+          startLoad();
+        });
       };
       const showLoaded = () => {
         if (settled) return;
@@ -794,10 +819,13 @@
         div.classList.remove('is-loading');
       };
       // Some blocked/hotlink-protected hosts never fire 'load' or 'error' —
-      // the request just hangs — so fall back to broken after a timeout.
-      const timeoutId = setTimeout(showBroken, 15000);
+      // the request just hangs — so fall back to broken after a generous
+      // timeout (large multi-MB page images can genuinely take a while on
+      // mobile/slow connections).
+      let timeoutId;
       img.addEventListener('load', showLoaded, { once: true });
       img.addEventListener('error', () => { clearTimeout(timeoutId); showBroken(); }, { once: true });
+      startLoad();
     }
 
     // Comments live at the bottom of the scrollable page area, after the
