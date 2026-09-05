@@ -75,7 +75,10 @@ matter how many pages it has.
 - Pick a section from the left sidebar (Manga, Chapters, Characters, etc).
 - **Add New** opens a form; **Edit** loads an entry back into the form;
   **Delete** removes it (with a confirmation).
-- For **Manga**, **Characters**, **World Locations**, and **Lore**, you set
+- **Chapters** also get a **Download PDF** button — it pulls that chapter's
+  uploaded pages back out in order and bundles them into a single PDF you
+  can save to your computer.
+- For **Manga**, **Characters**, and **Lore**, you set
   the Document ID yourself (a lowercase-dash slug, e.g. `eternity-of-crystal`)
   — this is the ID other content refers to. For example, when adding a
   **Chapter**, the "Manga id" field must match a Manga's slug exactly.
@@ -89,9 +92,9 @@ matter how many pages it has.
   updates automatically. Use the ↑ / ↓ buttons to reorder pages or ✕ to
   remove one, before saving. You can also paste image URLs one per line
   instead, if you'd rather host pages elsewhere.
-- **World Locations**: upload the map background image once (top of the
-  World Locations section) — then for each location, click directly on the
-  map image to place its marker. No coordinates to type.
+- **World Map**: this section has no entries to manage — just upload one
+  image (or paste a URL). It's the only thing shown in "Explore the World"
+  on the main site, and clicking it there opens the full image.
 - Changes are live in Firestore immediately; the public site picks them up
   the next time someone loads or refreshes the page.
 

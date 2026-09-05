@@ -93,21 +93,6 @@
       }
     ],
 
-    locations: [
-      { id: 'crystal-spire', name: 'The Crystal Spire', x: 28, y: 30,
-        desc: 'A tower of raw crystal said to be the source of the Eternity Crystal itself. Few who enter return unchanged.',
-        figures: ['Felix\u2019s awakening', 'First appearance of Ivo'] },
-      { id: 'silver-kingdom', name: 'The Silver Kingdom', x: 62, y: 22,
-        desc: 'A fortified realm of silver-veined stone, ruled by a crown that has feared the crystals for generations.',
-        figures: ['Richard\u2019s homeland', 'Setting of Chapter 2'] },
-      { id: 'ashfall-woods', name: 'Ashfall Woods', x: 45, y: 62,
-        desc: 'A forest blackened by an event lost to history — locals refuse to speak its name after dark.',
-        figures: ['Albia\u2019s origin', 'Hidden ruins'] },
-      { id: 'hollow-coast', name: 'The Hollow Coast', x: 78, y: 68,
-        desc: 'A shifting coastline where the tide reveals fragments of a kingdom that supposedly never existed.',
-        figures: ['Cyrus\u2019s hometown', 'Smugglers\u2019 routes'] }
-    ],
-
     lore: [
       { id: 'crystals', title: 'Crystals', body: 'The crystals are shards of a single, ancient formation shattered at the dawn of the current age. Each fragment resonates with a different aspect of will, memory, or fate — and each one chooses its bearer, not the other way around.' },
       { id: 'crystal-powers', title: 'Crystal Powers', body: 'No two crystal-bonds manifest the same power twice. Recorded effects range from accelerated instinct and clairvoyant flashes to the ability to fracture solid stone with a touch — but every power exacts a cost proportional to its strength.' },
@@ -135,7 +120,7 @@
       { tag: 'Development', date: 'Jul 22, 2026', title: 'Journey Begin platform enters open beta', desc: 'Search, bookmarks and the vertical reader are live across desktop and mobile.' }
     ],
 
-    worldMapImage: null // set via admin (World Locations → World Map Background); null = use the default generated art
+    worldMapImage: null // set via admin (World Map) — null = use the default generated art
   };
 
   /* =====================================================================
@@ -145,7 +130,7 @@
      fails for any reason — so the site always renders something.
   ===================================================================== */
   const DATA_CACHE_KEY = 'journeybegin_data_cache_v1';
-  const DATA_CACHE_KEYS = ['manga', 'chapters', 'characters', 'locations', 'lore', 'gallery', 'news'];
+  const DATA_CACHE_KEYS = ['manga', 'chapters', 'characters', 'lore', 'gallery', 'news'];
   const DATA_CACHE_SCALAR_KEYS = ['worldMapImage'];
 
   // Loads the last successfully-fetched live content (saved to this browser's
@@ -242,21 +227,15 @@
     const fb = window.jbFirebase;
     if (!fb || !fb.db) return;
     try {
-      const [locSnap, worldMapSnap] = await Promise.all([
-        fb.db.collection('locations').get(),
-        fb.db.collection('settings').doc('worldMap').get()
-      ]);
-      if (!locSnap.empty) {
-        DATA.locations = locSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      }
+      const worldMapSnap = await fb.db.collection('settings').doc('worldMap').get();
       if (worldMapSnap.exists && worldMapSnap.data().image) {
         DATA.worldMapImage = worldMapSnap.data().image;
       }
-      renderMap();
+      renderWorldMap();
       saveCachedData();
       SEARCH_INDEX = buildSearchIndex();
     } catch (err) {
-      console.warn('Journey Begin: could not load world map/locations.', err);
+      console.warn('Journey Begin: could not load world map.', err);
     }
   }
 
@@ -512,43 +491,33 @@
   /* =====================================================================
      6. RENDER: WORLD MAP
   ===================================================================== */
-  function renderMap() {
-    const stage = $('#mapStage');
-    const art = $('.map-art', stage);
-    if (art) {
-      if (DATA.worldMapImage) {
-        art.style.backgroundImage = `url('${DATA.worldMapImage}')`;
-        art.style.backgroundSize = 'cover';
-        art.style.backgroundPosition = 'center';
-      } else {
-        art.style.backgroundImage = '';
-      }
-    }
-    $$('.map-marker', stage).forEach(el => el.remove());
-    const markersHTML = DATA.locations.map(loc => `
-      <button class="map-marker" style="left:${loc.x}%; top:${loc.y}%;" data-loc="${loc.id}" aria-label="${loc.name}">
-        <span class="map-marker-label">${loc.name}</span>
-      </button>
-    `).join('');
-    stage.insertAdjacentHTML('beforeend', markersHTML);
+  function renderWorldMap() {
+    const figure = $('#worldMapFigure');
+    const figureImg = $('#worldMapFigureImg');
+    if (!figure || !figureImg) return;
 
-    $$('.map-marker', stage).forEach(marker => {
-      marker.addEventListener('click', () => {
-        $$('.map-marker', stage).forEach(m => m.classList.remove('active'));
-        marker.classList.add('active');
-        const loc = DATA.locations.find(l => l.id === marker.dataset.loc);
-        renderMapPanel(loc);
-      });
-    });
+    if (DATA.worldMapImage) {
+      figureImg.src = DATA.worldMapImage;
+      withFallback(figureImg, 'World Map', 'Upload one in Admin', 1200, 500);
+    } else {
+      figureImg.src = placeholderSVG('World Map', 'Upload one in Admin', 1200, 500);
+    }
+
+    const open = () => openWorldMapLightbox();
+    figure.addEventListener('click', open);
+    figure.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
   }
 
-  function renderMapPanel(loc) {
-    const panel = $('#mapPanel');
-    panel.innerHTML = `
-      <div class="loc-name">${loc.name}</div>
-      <p class="loc-desc">${loc.desc}</p>
-      <div class="loc-figures">${loc.figures.map(f => `<div><b>›</b> ${f}</div>`).join('')}</div>
-    `;
+  function openWorldMapLightbox() {
+    const lb = $('#lightbox');
+    const img = $('#lightboxImg');
+    img.src = DATA.worldMapImage || '';
+    img.alt = 'World Map';
+    withFallback(img, 'World Map', 'Upload one in Admin', 1200, 800);
+    $('#lightboxCaption').textContent = 'World Map';
+    lb.classList.add('open', 'single');
+    lb.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
   }
 
   /* =====================================================================
@@ -693,7 +662,7 @@
     document.body.style.overflow = 'hidden';
   }
   function closeLightbox() {
-    $('#lightbox').classList.remove('open');
+    $('#lightbox').classList.remove('open', 'single');
     $('#lightbox').setAttribute('aria-hidden', 'true');
     document.body.style.overflow = '';
   }
@@ -852,7 +821,7 @@
     DATA.manga.forEach(m => index.push({ type: 'Manga', title: m.title, sub: m.genre, action: () => { closeSearch(); scrollToId('manga'); } }));
     DATA.characters.forEach(c => index.push({ type: 'Character', title: c.name, sub: `Age ${c.age}`, action: () => { closeSearch(); openCharacterModal(c.id); } }));
     DATA.chapters.forEach(c => index.push({ type: 'Chapter', title: `Ch. ${c.number} — ${c.title}`, sub: c.status, action: () => { closeSearch(); if (c.status === 'Available') openReader(c.manga, c.number); else scrollToId('discover'); } }));
-    DATA.locations.forEach(l => index.push({ type: 'Location', title: l.name, sub: 'World Map', action: () => { closeSearch(); scrollToId('world'); } }));
+    index.push({ type: 'Location', title: 'World Map', sub: 'Explore the World', action: () => { closeSearch(); scrollToId('world'); } });
     DATA.lore.forEach(l => index.push({ type: 'Lore', title: l.title, sub: 'Lore & Mysteries', action: () => { closeSearch(); scrollToId('lore'); } }));
     DATA.news.forEach(n => index.push({ type: 'News', title: n.title, sub: n.tag, action: () => { closeSearch(); scrollToId('news'); } }));
     return index;
@@ -925,12 +894,6 @@
       let currentId = sections[0]?.id;
       sections.forEach(sec => { if (window.scrollY >= sec.offsetTop - 140) currentId = sec.id; });
       navLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + currentId));
-
-      // hero parallax
-      const heroBg = $('#heroBg');
-      if (heroBg && window.scrollY < window.innerHeight) {
-        heroBg.style.transform = `translateY(${window.scrollY * 0.25}px) scale(1.05)`;
-      }
     }, { passive: true });
 
     $$('[data-nav-link]').forEach(link => {
@@ -978,6 +941,7 @@
   const Auth = {
     user: null,       // Firebase Auth user object, or null when logged out
     ready: false,     // becomes true once the first auth state is known
+    photoData: null,  // compressed profile-photo data URL for the current user, or null
     listeners: []
   };
 
@@ -989,12 +953,104 @@
   function initAuth() {
     const fb = window.jbFirebase;
     if (!fb || !fb.auth) return;
-    fb.auth.onAuthStateChanged((user) => {
+    fb.auth.onAuthStateChanged(async (user) => {
       Auth.user = user;
       Auth.ready = true;
+      Auth.photoData = user ? await fetchUserPhoto(user.uid) : null;
       updateAccountUI(user);
       Auth.listeners.forEach(cb => cb(user));
     });
+  }
+
+  /* ---- Profile photo storage (same pattern as the admin panel: images are
+     compressed client-side and stored as data-URL strings directly in
+     Firestore, no Firebase Storage/billing needed) & a small per-uid cache
+     so chapter comments can show a picture next to a reader's name without
+     re-fetching the same profile doc over and over. ---- */
+  const AvatarPhotoCache = new Map(); // uid -> data URL string or null
+
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function loadImageEl(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  function drawAvatarDataURL(img, maxDim, quality) {
+    let { width, height } = img;
+    if (width > maxDim || height > maxDim) {
+      const scale = maxDim / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+    }
+    // Square-crop to the smaller dimension so avatars fill a circle cleanly.
+    const side = Math.min(width, height);
+    const canvas = document.createElement('canvas');
+    canvas.width = side;
+    canvas.height = side;
+    const ctx = canvas.getContext('2d');
+    const sx = (img.width - Math.min(img.width, img.height)) / 2;
+    const sy = (img.height - Math.min(img.width, img.height)) / 2;
+    const srcSide = Math.min(img.width, img.height);
+    ctx.drawImage(img, sx, sy, srcSide, srcSide, 0, 0, side, side);
+    return canvas.toDataURL('image/jpeg', quality);
+  }
+
+  async function fileToAvatarDataURL(file, maxBytes = 120000) {
+    const raw = await readFileAsDataURL(file);
+    const img = await loadImageEl(raw);
+    let maxDim = 320;
+    let quality = 0.82;
+    let dataUrl = drawAvatarDataURL(img, maxDim, quality);
+    let attempts = 0;
+    while (dataUrl.length > maxBytes && attempts < 6) {
+      quality = Math.max(0.4, quality - 0.12);
+      maxDim = Math.round(maxDim * 0.85);
+      dataUrl = drawAvatarDataURL(img, maxDim, quality);
+      attempts++;
+    }
+    return dataUrl;
+  }
+
+  async function fetchUserPhoto(uid) {
+    if (AvatarPhotoCache.has(uid)) return AvatarPhotoCache.get(uid);
+    const fb = window.jbFirebase;
+    if (!fb || !fb.db) return null;
+    try {
+      const doc = await fb.db.collection('users').doc(uid).get();
+      const photo = (doc.exists && doc.data().photoData) || null;
+      AvatarPhotoCache.set(uid, photo);
+      return photo;
+    } catch (e) {
+      AvatarPhotoCache.set(uid, null);
+      return null;
+    }
+  }
+
+  async function saveUserPhoto(uid, dataUrl) {
+    const fb = window.jbFirebase;
+    await fb.db.collection('users').doc(uid).set({ photoData: dataUrl }, { merge: true });
+    AvatarPhotoCache.set(uid, dataUrl);
+  }
+
+  // Shared avatar markup: a photo <img> when one exists, otherwise the
+  // reader's initial letter — used by the account panel, the register
+  // preview, and every comment/reply row.
+  function avatarInnerHTML(name, photoData) {
+    if (photoData) return `<img src="${photoData}" alt="">`;
+    const initial = (name || '?').trim().charAt(0).toUpperCase() || '?';
+    return escapeHTMLComment(initial);
   }
 
   function updateAccountUI(user) {
@@ -1006,7 +1062,11 @@
       const name = user.displayName || user.email || 'Reader';
       $('#accountName').textContent = name;
       $('#accountEmail').textContent = user.email || '';
-      $('#accountAvatar').textContent = name.trim().charAt(0).toUpperCase() || '?';
+      $('#accountAvatar').innerHTML = avatarInnerHTML(name, Auth.photoData);
+      // Collapse the change-password form back to its resting state on
+      // every auth refresh (e.g. after signing in as someone else).
+      $('#accountChangePasswordForm').classList.add('hidden');
+      $('#accountPasswordToggle').classList.remove('revealed');
     } else {
       authView.classList.remove('hidden');
       profileView.classList.add('hidden');
@@ -1031,9 +1091,26 @@
     return 'Something went wrong. Please try again.';
   }
 
+  // Generic show/hide toggle for any password <input> — used on the login,
+  // register, and change-password fields. Purely a typing aid: it never
+  // reveals a password the reader didn't just type into that same field.
+  function wirePasswordEyeToggle(btn) {
+    const targetId = btn.dataset.togglePassword;
+    const input = document.getElementById(targetId);
+    if (!input) return;
+    btn.addEventListener('click', () => {
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      btn.classList.toggle('revealed', !showing);
+      btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+    });
+  }
+
   function initAccountForms() {
     const fb = window.jbFirebase;
     initAuth();
+
+    $$('[data-toggle-password]').forEach(wirePasswordEyeToggle);
 
     $$('.account-tab').forEach(tab => {
       tab.addEventListener('click', () => {
@@ -1061,6 +1138,28 @@
       }
     });
 
+    // Registration profile-picture picker: compresses the chosen image
+    // client-side and keeps it staged in memory until the account is
+    // actually created (Firebase doesn't have a user to attach it to yet).
+    let pendingRegAvatar = null;
+    $('#acctRegAvatarInput').addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        pendingRegAvatar = await fileToAvatarDataURL(file);
+        $('#acctRegAvatarPreview').innerHTML = `<img src="${pendingRegAvatar}" alt="">`;
+        $('#acctRegAvatarClear').classList.remove('hidden');
+      } catch (err) {
+        toast('Could not read that image.', true);
+      }
+    });
+    $('#acctRegAvatarClear').addEventListener('click', () => {
+      pendingRegAvatar = null;
+      $('#acctRegAvatarInput').value = '';
+      $('#acctRegAvatarPreview').innerHTML = '?';
+      $('#acctRegAvatarClear').classList.add('hidden');
+    });
+
     $('#accountRegisterForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const errEl = $('#accountError');
@@ -1072,13 +1171,83 @@
       try {
         const cred = await fb.auth.createUserWithEmailAndPassword(email, password);
         await cred.user.updateProfile({ displayName: name });
-        await fb.db.collection('users').doc(cred.user.uid).set({ displayName: name, email }, { merge: true });
+        const profileDoc = { displayName: name, email };
+        if (pendingRegAvatar) profileDoc.photoData = pendingRegAvatar;
+        await fb.db.collection('users').doc(cred.user.uid).set(profileDoc, { merge: true });
+        if (pendingRegAvatar) AvatarPhotoCache.set(cred.user.uid, pendingRegAvatar);
+        Auth.photoData = pendingRegAvatar || null;
+        pendingRegAvatar = null;
+        $('#acctRegAvatarInput').value = '';
+        $('#acctRegAvatarPreview').innerHTML = '?';
+        $('#acctRegAvatarClear').classList.add('hidden');
         updateAccountUI(fb.auth.currentUser);
         $('#accountOverlay').classList.remove('open');
         toast('Account created — welcome!');
       } catch (err) {
         errEl.textContent = friendlyAuthError(err);
         errEl.classList.remove('hidden');
+      }
+    });
+
+    // Change profile picture from the logged-in profile view.
+    $('#acctProfileAvatarInput').addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!file || !Auth.user) return;
+      try {
+        const dataUrl = await fileToAvatarDataURL(file);
+        await saveUserPhoto(Auth.user.uid, dataUrl);
+        Auth.photoData = dataUrl;
+        $('#accountAvatar').innerHTML = avatarInnerHTML(Auth.user.displayName || Auth.user.email, dataUrl);
+        toast('Profile picture updated.');
+        if ($('#reader').classList.contains('open') && ReaderState.manga && ReaderState.chapter) {
+          const chapters = getMangaChapters(ReaderState.manga);
+          const chapter = chapters.find(c => c.number === ReaderState.chapter);
+          if (chapter) renderChapterComments(chapter.id);
+        }
+      } catch (err) {
+        toast('Could not update profile picture: ' + (err.message || err), true);
+      }
+    });
+
+    // Password row: Firebase never exposes a stored password (it's hashed,
+    // not reversible), so the eye icon here opens the secure equivalent —
+    // a change-password form that confirms identity with the current
+    // password before setting a new one.
+    $('#accountPasswordToggle').addEventListener('click', () => {
+      const form = $('#accountChangePasswordForm');
+      const opening = form.classList.contains('hidden');
+      form.classList.toggle('hidden', !opening);
+      $('#accountPasswordToggle').classList.toggle('revealed', opening);
+      if (!opening) {
+        form.reset();
+        $('#accountPasswordError').classList.add('hidden');
+      }
+    });
+
+    $('#accountChangePasswordForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = $('#accountPasswordError');
+      errEl.classList.add('hidden');
+      const user = Auth.user;
+      if (!user || !user.email) return;
+      const currentPassword = $('#acctCurrentPassword').value;
+      const newPassword = $('#acctNewPassword').value;
+      const btn = e.target.querySelector('button[type="submit"]');
+      btn.disabled = true;
+      try {
+        const credential = fb.firebase.auth.EmailAuthProvider.credential(user.email, currentPassword);
+        await user.reauthenticateWithCredential(credential);
+        await user.updatePassword(newPassword);
+        e.target.reset();
+        $('#accountChangePasswordForm').classList.add('hidden');
+        $('#accountPasswordToggle').classList.remove('revealed');
+        toast('Password updated.');
+      } catch (err) {
+        errEl.textContent = friendlyAuthError(err);
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
       }
     });
 
@@ -1104,8 +1273,23 @@
      "whole section refreshes" flash on every click. ---- */
   const QUICK_EMOJIS = ['❤️', '🙌', '🔥', '👏', '😢', '😍', '😮', '😂'];
   const CommentsState = { chapterId: null, comments: [] };
+  const COMMENT_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000; // 1 day
 
-  function tsMillis(ts) { return ts && ts.toMillis ? ts.toMillis() : 0; }
+  function tsMillis(ts) {
+    if (!ts) return 0;
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (typeof ts.toDate === 'function') return ts.toDate().getTime();
+    return 0;
+  }
+
+  // A reader can edit/delete their own comment (or reply) only for 1 day
+  // after posting it — matches the same window enforced server-side in
+  // firestore.rules, so the buttons simply disappear once it expires.
+  function canModifyComment(c, user) {
+    if (!user || !c || c.uid !== user.uid) return false;
+    const postedAt = tsMillis(c.createdAt) || Date.now(); // just-posted local placeholder
+    return (Date.now() - postedAt) < COMMENT_EDIT_WINDOW_MS;
+  }
 
   function timeAgo(date) {
     if (!date) return '';
@@ -1138,11 +1322,24 @@
         } catch (e) { c.replies = []; }
       }));
       comments.sort((a, b) => tsMillis(b.createdAt) - tsMillis(a.createdAt));
+      await preloadAuthorPhotos(comments);
       return comments;
     } catch (err) {
       console.warn('Could not load comments', err);
       return [];
     }
+  }
+
+  // Batch-loads (and caches) the profile photo for every distinct commenter
+  // on this chapter, so each comment/reply avatar can show a picture
+  // instead of just an initial letter without one Firestore read per row.
+  async function preloadAuthorPhotos(comments) {
+    const uids = new Set();
+    comments.forEach(c => {
+      if (c.uid) uids.add(c.uid);
+      (c.replies || []).forEach(r => { if (r.uid) uids.add(r.uid); });
+    });
+    await Promise.all(Array.from(uids).map(uid => fetchUserPhoto(uid)));
   }
 
   function likeButtonHTML(item, user) {
@@ -1156,16 +1353,42 @@
 
   function commentRowHTML(c, user, isReply) {
     const when = c.createdAt && c.createdAt.toDate ? timeAgo(c.createdAt.toDate()) : 'now';
-    const initial = (c.authorName || '?').trim().charAt(0).toUpperCase();
+    const photo = c.uid ? AvatarPhotoCache.get(c.uid) : null;
+    const canModify = canModifyComment(c, user);
     return `
       <div class="comment-row ${isReply ? 'is-reply' : ''}" data-comment="${c.id}">
-        <div class="comment-avatar">${initial}</div>
+        <div class="comment-avatar">${avatarInnerHTML(c.authorName, photo)}</div>
         <div class="comment-body">
-          <div class="comment-line"><span class="comment-author">${escapeHTMLComment(c.authorName || 'Reader')}</span> <span class="comment-time">${when}</span></div>
+          <div class="comment-line">
+            <span class="comment-author">${escapeHTMLComment(c.authorName || 'Reader')}</span>
+            <span class="comment-time">${when}</span>
+            ${c.editedAt ? '<span class="comment-edited-tag">(edited)</span>' : ''}
+          </div>
           <div class="comment-text">${escapeHTMLComment(c.text || '')}</div>
-          ${!isReply ? `<button type="button" class="comment-reply-toggle" data-reply-toggle="${c.id}">Reply</button>` : ''}
+          <div class="comment-actions">
+            ${!isReply ? `<button type="button" class="comment-reply-toggle" data-reply-toggle="${c.id}">Reply</button>` : ''}
+            ${canModify ? `<button type="button" class="comment-edit-toggle" data-edit-toggle="${c.id}">Edit</button>` : ''}
+            ${canModify ? `<button type="button" class="comment-delete-toggle" data-delete="${c.id}">Delete</button>` : ''}
+          </div>
         </div>
         ${likeButtonHTML(c, user)}
+      </div>`;
+  }
+
+  function commentEditFormHTML(c, isReply) {
+    return `
+      <div class="comment-row ${isReply ? 'is-reply' : ''}" data-comment="${c.id}" data-editing="${c.id}">
+        <div class="comment-avatar">${avatarInnerHTML(c.authorName, c.uid ? AvatarPhotoCache.get(c.uid) : null)}</div>
+        <div class="comment-body">
+          <div class="comment-line"><span class="comment-author">${escapeHTMLComment(c.authorName || 'Reader')}</span></div>
+          <form class="comment-edit-form" data-edit-form="${c.id}">
+            <textarea id="editInput-${c.id}" maxlength="${isReply ? 1000 : 2000}" required>${escapeHTMLComment(c.text || '')}</textarea>
+            <div class="comment-edit-actions">
+              <button type="button" class="comment-edit-cancel" data-edit-cancel="${c.id}">Cancel</button>
+              <button type="submit" class="comment-edit-save">Save</button>
+            </div>
+          </form>
+        </div>
       </div>`;
   }
 
@@ -1225,6 +1448,121 @@
         btn.classList.add('hidden');
       });
     });
+    // Edit (own comment/reply, within the 1-day window)
+    $$('[data-edit-toggle]', rowOrForm).forEach(btn => {
+      btn.addEventListener('click', () => showCommentEditForm(btn.dataset.editToggle));
+    });
+    // Delete (own comment/reply, within the 1-day window)
+    $$('[data-delete]', rowOrForm).forEach(btn => {
+      btn.addEventListener('click', () => deleteCommentOrReply(btn.dataset.delete));
+    });
+  }
+
+  // Lightweight in-page confirm dialog — native window.confirm() is
+  // blocked in some embedded/sandboxed preview contexts.
+  function customConfirm(message, confirmLabel = 'Confirm') {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.innerHTML = `
+        <div class="confirm-box">
+          <p>${escapeHTMLComment(message)}</p>
+          <div class="confirm-actions">
+            <button type="button" id="confirmCancelBtn">Cancel</button>
+            <button type="button" class="confirm-danger" id="confirmOkBtn">${escapeHTMLComment(confirmLabel)}</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const cleanup = (result) => { overlay.remove(); resolve(result); };
+      $('#confirmCancelBtn', overlay).addEventListener('click', () => cleanup(false));
+      $('#confirmOkBtn', overlay).addEventListener('click', () => cleanup(true));
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(false); });
+      document.addEventListener('keydown', function esc(e) {
+        if (e.key === 'Escape') { document.removeEventListener('keydown', esc); cleanup(false); }
+      });
+    });
+  }
+
+  function showCommentEditForm(itemId) {
+    const row = document.querySelector(`.comment-row[data-comment="${itemId}"]`);
+    const { item, ref, parent } = findCommentAndRef(itemId);
+    if (!row || !item || !ref) return;
+    if (!canModifyComment(item, Auth.user)) return; // window expired since render
+
+    const isReply = !!parent;
+    row.outerHTML = commentEditFormHTML(item, isReply);
+    const newRow = document.querySelector(`.comment-row[data-comment="${itemId}"]`);
+    const form = $('#editInput-' + itemId).closest('form');
+    $('#editInput-' + itemId).focus();
+
+    $(`[data-edit-cancel="${itemId}"]`, newRow).addEventListener('click', () => {
+      newRow.outerHTML = commentRowHTML(item, Auth.user, isReply);
+      wireCommentRowInteractions(document.querySelector(`.comment-row[data-comment="${itemId}"]`));
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const textarea = $('#editInput-' + itemId);
+      const text = textarea.value.trim();
+      if (!text) return;
+      const fb = window.jbFirebase;
+      const saveBtn = form.querySelector('.comment-edit-save');
+      saveBtn.disabled = true;
+      try {
+        await ref.update({ text, editedAt: fb.firebase.firestore.FieldValue.serverTimestamp() });
+        item.text = text;
+        item.editedAt = { toDate: () => new Date() };
+        const currentRow = document.querySelector(`.comment-row[data-comment="${itemId}"]`);
+        currentRow.outerHTML = commentRowHTML(item, Auth.user, isReply);
+        wireCommentRowInteractions(document.querySelector(`.comment-row[data-comment="${itemId}"]`));
+      } catch (err) {
+        toast('Could not save changes: ' + (err.message || err), true);
+        saveBtn.disabled = false;
+      }
+    });
+  }
+
+  async function deleteCommentOrReply(itemId) {
+    const { item, ref, parent } = findCommentAndRef(itemId);
+    if (!item || !ref) return;
+    if (!canModifyComment(item, Auth.user)) return; // window expired since render
+
+    const ok = await customConfirm(
+      parent ? 'Delete this reply? This cannot be undone.' : 'Delete this comment? This will also remove its replies and cannot be undone.',
+      'Delete'
+    );
+    if (!ok) return;
+
+    try {
+      if (!parent) {
+        // Deleting a top-level comment doesn't need to also delete its
+        // replies subcollection: replies are only ever loaded by first
+        // reading the parent comment out of the top-level "comments" query,
+        // so once the parent is gone its replies simply become unreachable
+        // (they may still exist in Firestore, but no reader will ever see
+        // them again — and a reply's own author retains the option to
+        // delete it directly within their own 1-day window).
+        await ref.delete();
+        CommentsState.comments = CommentsState.comments.filter(c => c.id !== itemId);
+        const threadEl = document.querySelector(`.comment-thread[data-thread="${itemId}"]`);
+        if (threadEl) threadEl.remove();
+        if (!CommentsState.comments.length) {
+          const listEl = $('#chapterCommentList');
+          if (listEl) listEl.innerHTML = `<p class="comment-empty">No comments yet — be the first to share your thoughts.</p>`;
+        }
+      } else {
+        await ref.delete();
+        parent.replies = (parent.replies || []).filter(r => r.id !== itemId);
+        const container = $('#replies-' + parent.id);
+        if (container) {
+          container.outerHTML = repliesBlockHTML(parent, Auth.user);
+          wireCommentRowInteractions($('#replies-' + parent.id));
+        }
+      }
+      toast('Deleted.');
+    } catch (err) {
+      toast('Could not delete: ' + (err.message || err), true);
+    }
   }
 
   function findCommentAndRef(itemId) {
@@ -1298,12 +1636,12 @@
         const docRef = await fb.db.collection('comments').doc(commentId).collection('replies').add({
           text,
           uid: user.uid,
-          authorName: user.displayName || user.email || 'Reader',
+          authorName: user.displayName || 'Reader',
           createdAt: fb.firebase.firestore.FieldValue.serverTimestamp(),
           likedBy: []
         });
         const comment = CommentsState.comments.find(c => c.id === commentId);
-        const newReply = { id: docRef.id, text, uid: user.uid, authorName: user.displayName || user.email || 'Reader', createdAt: { toDate: () => new Date() }, likedBy: [] };
+        const newReply = { id: docRef.id, text, uid: user.uid, authorName: user.displayName || 'Reader', createdAt: { toDate: () => new Date() }, likedBy: [] };
         if (comment) {
           comment.replies = comment.replies || [];
           comment.replies.push(newReply);
@@ -1364,11 +1702,11 @@
             chapterId,
             text,
             uid: user.uid,
-            authorName: user.displayName || user.email || 'Reader',
+            authorName: user.displayName || 'Reader',
             createdAt: fb.firebase.firestore.FieldValue.serverTimestamp(),
             likedBy: []
           });
-          const newComment = { id: docRef.id, chapterId, text, uid: user.uid, authorName: user.displayName || user.email || 'Reader', createdAt: { toDate: () => new Date() }, likedBy: [], replies: [] };
+          const newComment = { id: docRef.id, chapterId, text, uid: user.uid, authorName: user.displayName || 'Reader', createdAt: { toDate: () => new Date() }, likedBy: [], replies: [] };
           CommentsState.comments.unshift(newComment);
           input.value = '';
 
@@ -1479,7 +1817,7 @@
     // content from Firestore the moment it arrives.
     renderMangaGrid();
     renderChapterList();
-    renderMap();
+    renderWorldMap();
     renderCharacters();
     renderLore();
     renderGallery();

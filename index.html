@@ -29,6 +29,22 @@
   </div>
 </div>
 
+<!-- ============ AMBIENT BACKDROP (CSS-only aurora wash + vignette + grain — always
+     present beneath the 3D canvas, so the site still looks rich and cinematic
+     even before WebGL/Three.js finishes loading, and adds extra color depth
+     underneath the particle layer once it does) ============ -->
+<div class="ambient-backdrop" aria-hidden="true">
+  <span class="ambient-sheen"></span>
+  <span class="ambient-blob ambient-blob-1"></span>
+  <span class="ambient-blob ambient-blob-2"></span>
+  <span class="ambient-blob ambient-blob-3"></span>
+  <span class="ambient-blob ambient-blob-4"></span>
+  <span class="ambient-blob ambient-blob-5"></span>
+  <span class="ambient-grid"></span>
+</div>
+<div class="ambient-grain" aria-hidden="true"></div>
+<div class="ambient-vignette" aria-hidden="true"></div>
+
 <!-- ============ 3D MOTION BACKGROUND (Three.js canvas, fixed behind entire site) ============ -->
 <canvas id="bgCanvas3D" class="bg-canvas-3d" aria-hidden="true"></canvas>
 
@@ -138,12 +154,28 @@
         </div>
         <div class="field">
           <label for="acctLoginPassword">Password</label>
-          <input type="password" id="acctLoginPassword" autocomplete="current-password" required>
+          <div class="password-field">
+            <input type="password" id="acctLoginPassword" autocomplete="current-password" required>
+            <button type="button" class="password-eye" data-toggle-password="acctLoginPassword" aria-label="Show password">
+              <svg viewBox="0 0 24 24" class="eye-icon"><g class="eye-open"><path d="M12 5C5.5 5 2 12 2 12s3.5 7 10 7 10-7 10-7-3.5-7-10-7zm0 11a4 4 0 110-8 4 4 0 010 8z"/></g><g class="eye-closed"><path d="M3.3 2.3l18.4 18.4-1.4 1.4-3-3C15.7 19.7 14 20 12 20 5.5 20 2 13 2 13s1.4-2.8 4.2-4.9L1.9 3.7l1.4-1.4zM12 8a4 4 0 013.9 4.9L9.1 6.1C9.9 8.1 10.9 8 12 8zm-4.6 1.7C6.5 10.6 5.7 11.7 5 12.9c.9 1.5 3.7 5.1 7 5.1 1 0 1.9-.2 2.7-.5l-1.9-1.9a4 4 0 01-4.9-4.9l-1.5-1z"/></g></svg>
+            </button>
+          </div>
         </div>
         <button type="submit" class="acct-btn-primary">Sign In</button>
       </form>
 
       <form id="accountRegisterForm" class="account-form hidden">
+        <div class="field avatar-upload-field">
+          <label>Profile Picture (optional)</label>
+          <div class="avatar-upload-row">
+            <div class="avatar-upload-preview" id="acctRegAvatarPreview">?</div>
+            <div class="avatar-upload-actions">
+              <label class="avatar-upload-btn" for="acctRegAvatarInput">Choose Photo</label>
+              <input type="file" id="acctRegAvatarInput" accept="image/*" hidden>
+              <button type="button" class="avatar-upload-clear hidden" id="acctRegAvatarClear">Remove</button>
+            </div>
+          </div>
+        </div>
         <div class="field">
           <label for="acctRegName">Display Name</label>
           <input type="text" id="acctRegName" autocomplete="name" required maxlength="40">
@@ -154,7 +186,12 @@
         </div>
         <div class="field">
           <label for="acctRegPassword">Password</label>
-          <input type="password" id="acctRegPassword" autocomplete="new-password" required minlength="6">
+          <div class="password-field">
+            <input type="password" id="acctRegPassword" autocomplete="new-password" required minlength="6">
+            <button type="button" class="password-eye" data-toggle-password="acctRegPassword" aria-label="Show password">
+              <svg viewBox="0 0 24 24" class="eye-icon"><g class="eye-open"><path d="M12 5C5.5 5 2 12 2 12s3.5 7 10 7 10-7 10-7-3.5-7-10-7zm0 11a4 4 0 110-8 4 4 0 010 8z"/></g><g class="eye-closed"><path d="M3.3 2.3l18.4 18.4-1.4 1.4-3-3C15.7 19.7 14 20 12 20 5.5 20 2 13 2 13s1.4-2.8 4.2-4.9L1.9 3.7l1.4-1.4zM12 8a4 4 0 013.9 4.9L9.1 6.1C9.9 8.1 10.9 8 12 8zm-4.6 1.7C6.5 10.6 5.7 11.7 5 12.9c.9 1.5 3.7 5.1 7 5.1 1 0 1.9-.2 2.7-.5l-1.9-1.9a4 4 0 01-4.9-4.9l-1.5-1z"/></g></svg>
+            </button>
+          </div>
           <div class="account-hint">At least 6 characters.</div>
         </div>
         <button type="submit" class="acct-btn-primary">Create Account</button>
@@ -165,9 +202,44 @@
     <div id="accountProfileView" class="hidden">
       <div class="account-profile">
         <div class="account-avatar" id="accountAvatar">?</div>
+        <label class="avatar-change-btn" for="acctProfileAvatarInput">Change Photo</label>
+        <input type="file" id="acctProfileAvatarInput" accept="image/*" hidden>
         <div class="account-name" id="accountName">—</div>
         <div class="account-email" id="accountEmail">—</div>
       </div>
+
+      <div class="account-info-row">
+        <span class="account-info-label">Password</span>
+        <span class="account-info-value">••••••••</span>
+        <button type="button" class="password-eye" id="accountPasswordToggle" aria-label="Change password">
+          <svg viewBox="0 0 24 24" class="eye-icon"><g class="eye-open"><path d="M12 5C5.5 5 2 12 2 12s3.5 7 10 7 10-7 10-7-3.5-7-10-7zm0 11a4 4 0 110-8 4 4 0 010 8z"/></g><g class="eye-closed"><path d="M3.3 2.3l18.4 18.4-1.4 1.4-3-3C15.7 19.7 14 20 12 20 5.5 20 2 13 2 13s1.4-2.8 4.2-4.9L1.9 3.7l1.4-1.4zM12 8a4 4 0 013.9 4.9L9.1 6.1C9.9 8.1 10.9 8 12 8zm-4.6 1.7C6.5 10.6 5.7 11.7 5 12.9c.9 1.5 3.7 5.1 7 5.1 1 0 1.9-.2 2.7-.5l-1.9-1.9a4 4 0 01-4.9-4.9l-1.5-1z"/></g></svg>
+        </button>
+      </div>
+
+      <form id="accountChangePasswordForm" class="account-form hidden">
+        <div class="account-error hidden" id="accountPasswordError"></div>
+        <div class="field">
+          <label for="acctCurrentPassword">Current Password</label>
+          <div class="password-field">
+            <input type="password" id="acctCurrentPassword" autocomplete="current-password" required>
+            <button type="button" class="password-eye" data-toggle-password="acctCurrentPassword" aria-label="Show password">
+              <svg viewBox="0 0 24 24" class="eye-icon"><g class="eye-open"><path d="M12 5C5.5 5 2 12 2 12s3.5 7 10 7 10-7 10-7-3.5-7-10-7zm0 11a4 4 0 110-8 4 4 0 010 8z"/></g><g class="eye-closed"><path d="M3.3 2.3l18.4 18.4-1.4 1.4-3-3C15.7 19.7 14 20 12 20 5.5 20 2 13 2 13s1.4-2.8 4.2-4.9L1.9 3.7l1.4-1.4zM12 8a4 4 0 013.9 4.9L9.1 6.1C9.9 8.1 10.9 8 12 8zm-4.6 1.7C6.5 10.6 5.7 11.7 5 12.9c.9 1.5 3.7 5.1 7 5.1 1 0 1.9-.2 2.7-.5l-1.9-1.9a4 4 0 01-4.9-4.9l-1.5-1z"/></g></svg>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="acctNewPassword">New Password</label>
+          <div class="password-field">
+            <input type="password" id="acctNewPassword" autocomplete="new-password" required minlength="6">
+            <button type="button" class="password-eye" data-toggle-password="acctNewPassword" aria-label="Show password">
+              <svg viewBox="0 0 24 24" class="eye-icon"><g class="eye-open"><path d="M12 5C5.5 5 2 12 2 12s3.5 7 10 7 10-7 10-7-3.5-7-10-7zm0 11a4 4 0 110-8 4 4 0 010 8z"/></g><g class="eye-closed"><path d="M3.3 2.3l18.4 18.4-1.4 1.4-3-3C15.7 19.7 14 20 12 20 5.5 20 2 13 2 13s1.4-2.8 4.2-4.9L1.9 3.7l1.4-1.4zM12 8a4 4 0 013.9 4.9L9.1 6.1C9.9 8.1 10.9 8 12 8zm-4.6 1.7C6.5 10.6 5.7 11.7 5 12.9c.9 1.5 3.7 5.1 7 5.1 1 0 1.9-.2 2.7-.5l-1.9-1.9a4 4 0 01-4.9-4.9l-1.5-1z"/></g></svg>
+            </button>
+          </div>
+          <div class="account-hint">At least 6 characters. You'll need your current password to confirm this change.</div>
+        </div>
+        <button type="submit" class="acct-btn-primary">Update Password</button>
+      </form>
+
       <button class="acct-btn-danger" id="accountLogoutBtn">Sign Out</button>
     </div>
   </div>
@@ -179,8 +251,6 @@
        HERO
   ============================================================= -->
   <section class="hero" id="home">
-    <div class="hero-bg" id="heroBg"></div>
-    <div class="hero-overlay"></div>
     <div class="hero-shards" aria-hidden="true"></div>
 
     <div class="hero-content">
@@ -195,11 +265,6 @@
           <span>Explore World</span>
         </a>
       </div>
-    </div>
-
-    <div class="scroll-cue reveal">
-      <span>Scroll</span>
-      <div class="scroll-line"></div>
     </div>
   </section>
 
@@ -241,18 +306,12 @@
       <header class="section-head reveal-up">
         <p class="section-eyebrow">Cartography</p>
         <h2 class="section-title">Explore the World</h2>
-        <p class="section-desc">The realm of Eternity of Crystal — click a marker to uncover its secrets.</p>
+        <p class="section-desc">The realm of Eternity of Crystal — click the map to view it in full.</p>
       </header>
 
-      <div class="map-wrap reveal-up">
-        <div class="map-stage" id="mapStage">
-          <div class="map-art"><!-- generated fantasy-map background via CSS --></div>
-          <!-- markers injected by script.js -->
-        </div>
-
-        <aside class="map-panel" id="mapPanel">
-          <p class="map-panel-empty">Select a location marker on the map to learn about its role in the story.</p>
-        </aside>
+      <div class="world-map-figure reveal-up" id="worldMapFigure" tabindex="0" role="button" aria-label="View full world map">
+        <img src="" alt="World Map" id="worldMapFigureImg">
+        <span class="world-map-hint">Click to view full map</span>
       </div>
     </div>
   </section>

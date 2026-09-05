@@ -102,9 +102,12 @@
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 2000);
     camera.position.z = 60;
+    scene.fog = new THREE.FogExp2(0x07070a, 0.0017);
 
     const ice = new THREE.Color(0x8fd3ec);
     const violet = new THREE.Color(0x8a78c9);
+    const silver = new THREE.Color(0xc7cbd4);
+    const palette = [ice, violet, silver];
 
     /* --- glow sprite texture, shared by all particles --- */
     function makeGlowTexture() {
@@ -130,56 +133,84 @@
       ctx.fillStyle = g; ctx.fillRect(0, h * .3, w, h * .4);
       return new THREE.CanvasTexture(c);
     }
-
-    /* --- floating crystal dust (particles) --- */
-    const particleCount = isSmallScreen ? 220 : 650;
-    const positions = new Float32Array(particleCount * 3);
-    const colors = new Float32Array(particleCount * 3);
-    for (let i = 0; i < particleCount; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 260;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * 260;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 260;
-      const col = Math.random() > 0.5 ? ice : violet;
-      colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
+    /* --- large soft radial cloud texture, used for nebula sprites --- */
+    function makeNebulaTexture() {
+      const size = 256;
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+      g.addColorStop(0, 'rgba(255,255,255,.9)');
+      g.addColorStop(.35, 'rgba(255,255,255,.35)');
+      g.addColorStop(.7, 'rgba(255,255,255,.08)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, size, size);
+      return new THREE.CanvasTexture(c);
     }
-    const pGeo = new THREE.BufferGeometry();
-    pGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    pGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const pMat = new THREE.PointsMaterial({
-      size: isSmallScreen ? 1.7 : 2.2,
-      map: makeGlowTexture(),
-      vertexColors: true,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      opacity: 0.75
-    });
-    const particles = new THREE.Points(pGeo, pMat);
-    scene.add(particles);
 
-    /* --- slowly drifting translucent crystal shards --- */
-    const shards = [];
-    const shardCount = isSmallScreen ? 3 : 6;
-    for (let i = 0; i < shardCount; i++) {
-      const size = 6 + Math.random() * 6;
-      const geo = Math.random() > 0.5
-        ? new THREE.IcosahedronGeometry(size, 0)
-        : new THREE.OctahedronGeometry(size, 0);
-      const mat = new THREE.MeshBasicMaterial({
-        color: Math.random() > 0.5 ? ice : violet,
-        wireframe: true, transparent: true, opacity: 0.16
+    const glowTex = makeGlowTexture();
+
+    /* --- floating crystal dust (particles), split into a near/bright
+       layer and a far/dim layer so the field reads with real depth
+       instead of one flat cloud --- */
+    function makeParticleLayer(count, spread, zOffset, size, opacity) {
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        positions[i * 3] = (Math.random() - 0.5) * spread;
+        positions[i * 3 + 1] = (Math.random() - 0.5) * spread;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * spread + zOffset;
+        const col = palette[(Math.random() * palette.length) | 0];
+        colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const mat = new THREE.PointsMaterial({
+        size, map: glowTex, vertexColors: true, transparent: true,
+        depthWrite: false, blending: THREE.AdditiveBlending, opacity
       });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(
-        (Math.random() - 0.5) * 140,
-        (Math.random() - 0.5) * 140,
-        (Math.random() - 0.5) * 120 - 30
+      const pts = new THREE.Points(geo, mat);
+      scene.add(pts);
+      return pts;
+    }
+
+    const particlesNear = makeParticleLayer(
+      isSmallScreen ? 160 : 460, 220, 0, isSmallScreen ? 2.1 : 2.6, 0.85
+    );
+    const particlesFar = makeParticleLayer(
+      isSmallScreen ? 110 : 320, 340, -140, isSmallScreen ? 3 : 4, 0.35
+    );
+
+    /* --- slowly drifting crystal shards: a wireframe edge over a very
+       soft translucent fill, so each shard reads as a lit facet rather
+       than a flat wire cage --- */
+    const shards = [];
+    const shardCount = isSmallScreen ? 4 : 9;
+    for (let i = 0; i < shardCount; i++) {
+      const size = 5 + Math.random() * 8;
+      const GeoCtor = Math.random() > 0.5 ? THREE.IcosahedronGeometry : THREE.OctahedronGeometry;
+      const geo = new GeoCtor(size, 0);
+      const color = palette[(Math.random() * palette.length) | 0];
+
+      const group = new THREE.Group();
+      const fillMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.05 });
+      const wireMat = new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: 0.28 });
+      group.add(new THREE.Mesh(geo, fillMat));
+      group.add(new THREE.Mesh(geo, wireMat));
+
+      group.position.set(
+        (Math.random() - 0.5) * 160,
+        (Math.random() - 0.5) * 160,
+        (Math.random() - 0.5) * 140 - 40
       );
-      mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
-      mesh.userData.spin = { x: (Math.random() - 0.5) * 0.0006, y: (Math.random() - 0.5) * 0.0008 };
-      mesh.userData.driftPhase = Math.random() * Math.PI * 2;
-      scene.add(mesh);
-      shards.push(mesh);
+      group.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+      group.userData.spin = { x: (Math.random() - 0.5) * 0.0006, y: (Math.random() - 0.5) * 0.0008 };
+      group.userData.driftPhase = Math.random() * Math.PI * 2;
+      group.userData.pulsePhase = Math.random() * Math.PI * 2;
+      group.userData.wireMat = wireMat;
+      group.userData.baseOpacity = wireMat.opacity;
+      scene.add(group);
+      shards.push(group);
     }
 
     /* --- soft diagonal light streaks --- */
@@ -198,6 +229,79 @@
       scene.add(sprite);
       streaks.push(sprite);
     }
+
+    /* --- large drifting nebula clouds for painterly color depth --- */
+    const nebulaTex = makeNebulaTexture();
+    const nebulae = [];
+    const nebulaCount = isSmallScreen ? 2 : 4;
+    for (let i = 0; i < nebulaCount; i++) {
+      const color = i % 2 === 0 ? ice : violet;
+      const mat = new THREE.SpriteMaterial({
+        map: nebulaTex, color, transparent: true,
+        opacity: 0.05 + Math.random() * 0.05,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      const sprite = new THREE.Sprite(mat);
+      const scale = 240 + Math.random() * 200;
+      sprite.scale.set(scale, scale, 1);
+      sprite.position.set(
+        (Math.random() - 0.5) * 300,
+        (Math.random() - 0.5) * 220,
+        -260 - Math.random() * 260
+      );
+      sprite.userData.driftPhase = Math.random() * Math.PI * 2;
+      sprite.userData.baseX = sprite.position.x;
+      sprite.userData.baseY = sprite.position.y;
+      scene.add(sprite);
+      nebulae.push(sprite);
+    }
+
+    /* --- occasional cinematic shooting star, streaking across the field --- */
+    const shootingStar = (function initShootingStar() {
+      if (isSmallScreen) return null;
+      const mat = new THREE.SpriteMaterial({
+        map: glowTex, color: 0xffffff, transparent: true,
+        opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(3.5, 3.5, 1);
+      scene.add(sprite);
+
+      const trailMat = new THREE.SpriteMaterial({
+        map: makeStreakTexture(), color: 0x8fd3ec, transparent: true,
+        opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      const trail = new THREE.Sprite(trailMat);
+      trail.scale.set(70, 4, 1);
+      scene.add(trail);
+
+      let active = false, start = null, end = null, t0 = 0, duration = 1.6;
+      function trigger(now) {
+        start = new THREE.Vector3((Math.random() - 0.5) * 220 - 60, 60 + Math.random() * 30, -60 - Math.random() * 60);
+        end = new THREE.Vector3(start.x + 140 + Math.random() * 60, start.y - 90 - Math.random() * 30, start.z);
+        t0 = now; active = true;
+      }
+      function update(now) {
+        if (!active) {
+          if (!reduceMotion && Math.random() < 0.0009) trigger(now);
+          return;
+        }
+        const p = (now - t0) / duration;
+        if (p >= 1) {
+          active = false; mat.opacity = 0; trailMat.opacity = 0;
+          return;
+        }
+        const pos = start.clone().lerp(end, p);
+        sprite.position.copy(pos);
+        trail.position.copy(pos);
+        const angle = Math.atan2(end.y - start.y, end.x - start.x);
+        trail.material.rotation = angle;
+        const fade = p < 0.15 ? p / 0.15 : (1 - (p - 0.15) / 0.85);
+        mat.opacity = Math.max(0, fade) * 0.9;
+        trailMat.opacity = Math.max(0, fade) * 0.55;
+      }
+      return { update };
+    })();
 
     /* --- parallax input: pointer + scroll --- */
     let mouseX = 0, mouseY = 0, targetX = 0, targetY = 0;
@@ -228,19 +332,31 @@
       targetX += (mouseX - targetX) * 0.04;
       targetY += (mouseY - targetY) * 0.04;
 
-      particles.rotation.y = t * 0.015 + targetX * 0.3;
-      particles.rotation.x = t * 0.008 + targetY * 0.2;
+      particlesNear.rotation.y = t * 0.016 + targetX * 0.3;
+      particlesNear.rotation.x = t * 0.009 + targetY * 0.2;
+      particlesFar.rotation.y = t * 0.006 + targetX * 0.12;
+      particlesFar.rotation.x = t * 0.003 + targetY * 0.08;
 
       shards.forEach((m) => {
         m.rotation.x += m.userData.spin.x;
         m.rotation.y += m.userData.spin.y;
         m.position.y += Math.sin(t * 0.2 + m.userData.driftPhase) * 0.01;
+        const pulse = 0.75 + Math.sin(t * 0.6 + m.userData.pulsePhase) * 0.25;
+        m.userData.wireMat.opacity = m.userData.baseOpacity * pulse;
       });
 
       streaks.forEach((s, i) => { s.material.rotation += 0.0006 * (i % 2 === 0 ? 1 : -1); });
 
-      camera.position.x = targetX * 8;
-      camera.position.y = -targetY * 6 - scrollFrac * 10;
+      nebulae.forEach((n) => {
+        n.position.x = n.userData.baseX + Math.sin(t * 0.05 + n.userData.driftPhase) * 26;
+        n.position.y = n.userData.baseY + Math.cos(t * 0.04 + n.userData.driftPhase) * 20;
+        n.material.rotation += 0.00025;
+      });
+
+      if (shootingStar) shootingStar.update(t);
+
+      camera.position.x = targetX * 8 + Math.sin(t * 0.05) * 3;
+      camera.position.y = -targetY * 6 - scrollFrac * 10 + Math.cos(t * 0.04) * 2;
       camera.lookAt(0, 0, 0);
 
       renderer.render(scene, camera);

@@ -62,15 +62,25 @@ service cloud.firestore {
     }
 
     // Reader accounts: each user can manage their own public profile doc
-    // (display name/email) used to show comment author names.
+    // (display name/email/profile photo) used to show comment author names.
+    // photoData is a compressed data-URL string (see script.js) — capped
+    // well under the 1MB document limit.
     match /users/{uid} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null && request.auth.uid == uid
+                   && (!('photoData' in request.resource.data)
+                       || request.resource.data.photoData is string
+                       || request.resource.data.photoData == null)
+                   && (!('photoData' in request.resource.data)
+                       || request.resource.data.photoData == null
+                       || request.resource.data.photoData.size() < 900000);
     }
 
     // Chapter comments: anyone can read; any signed-in reader can post a
-    // comment as themselves; likedBy is the only field any signed-in reader
-    // can update on someone else's comment (a like toggle, not an edit).
+    // comment as themselves. likedBy can be toggled by any signed-in
+    // reader (a like, not an edit). The original author can additionally
+    // edit the "text" (setting "editedAt") or delete their own comment,
+    // but only within 1 day of posting — after that only an admin can.
     match /comments/{commentId} {
       allow read: if true;
       allow create: if request.auth != null
@@ -78,9 +88,20 @@ service cloud.firestore {
                     && request.resource.data.text is string
                     && request.resource.data.text.size() > 0
                     && request.resource.data.text.size() <= 2000;
-      allow update: if request.auth != null
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy']);
-      allow delete: if isAdmin();
+      allow update: if isAdmin()
+                    || (request.auth != null
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy']))
+                    || (request.auth != null
+                        && request.auth.uid == resource.data.uid
+                        && request.time < resource.data.createdAt + duration.value(1, 'd')
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+                        && request.resource.data.text is string
+                        && request.resource.data.text.size() > 0
+                        && request.resource.data.text.size() <= 2000);
+      allow delete: if isAdmin()
+                    || (request.auth != null
+                        && request.auth.uid == resource.data.uid
+                        && request.time < resource.data.createdAt + duration.value(1, 'd'));
 
       // Threaded replies under a comment — same rules as top-level comments.
       match /replies/{replyId} {
@@ -90,9 +111,20 @@ service cloud.firestore {
                       && request.resource.data.text is string
                       && request.resource.data.text.size() > 0
                       && request.resource.data.text.size() <= 1000;
-        allow update: if request.auth != null
-                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy']);
-        allow delete: if isAdmin();
+        allow update: if isAdmin()
+                      || (request.auth != null
+                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy']))
+                      || (request.auth != null
+                          && request.auth.uid == resource.data.uid
+                          && request.time < resource.data.createdAt + duration.value(1, 'd')
+                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+                          && request.resource.data.text is string
+                          && request.resource.data.text.size() > 0
+                          && request.resource.data.text.size() <= 1000);
+        allow delete: if isAdmin()
+                      || (request.auth != null
+                          && request.auth.uid == resource.data.uid
+                          && request.time < resource.data.createdAt + duration.value(1, 'd'));
       }
     }
   }
